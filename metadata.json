@@ -1,0 +1,7 @@
+{
+  "name": "AI IPTV Player",
+  "description": "An IPTV player that provides real-time translation and dubbing for any channel using Gemini AI. Paste your M3U playlist URL to get started.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
