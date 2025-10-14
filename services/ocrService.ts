@@ -1,22 +1,19 @@
+import { OcrResult } from '../types';
+
 // This declares the Tesseract object from the CDN script to TypeScript
 declare const Tesseract: any;
 
-export interface OcrResult {
-  id: number;
-  text: string;
-  translatedText: string;
-  bbox: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
+export interface OcrAndSummaryResult {
+  translatedBlocks: OcrResult[];
+  summary: string;
 }
+
 
 let tesseractWorker: any | null = null;
 
 async function getTesseractWorker(): Promise<any> {
     if (!tesseractWorker) {
+        // Initialize worker for Japanese
         tesseractWorker = await Tesseract.createWorker('jpn');
     }
     return tesseractWorker;
@@ -25,20 +22,20 @@ async function getTesseractWorker(): Promise<any> {
 export const ocrAndTranslateImageLocal = async (
   canvasElement: HTMLCanvasElement,
   targetLanguageCode: string
-): Promise<OcrResult[]> => {
+): Promise<OcrAndSummaryResult | null> => {
   try {
     const worker = await getTesseractWorker();
     const { data } = await worker.recognize(canvasElement);
     
     if (!data.lines || data.lines.length === 0) {
-      return [];
+      return null;
     }
 
     const originalLines = data.lines.map((line: any) => line.text.trim()).filter(Boolean);
     const joinedText = originalLines.join('\n');
 
     if (!joinedText) {
-        return [];
+        return null;
     }
     
     const translateResponse = await fetch("https://libretranslate.de/translate", {
@@ -54,11 +51,12 @@ export const ocrAndTranslateImageLocal = async (
 
     if (!translateResponse.ok) {
         console.error(`LibreTranslate API error: ${translateResponse.statusText}`);
-        return []; // Return empty on translation failure
+        return null; // Return null on translation failure
     }
 
     const translationResult = await translateResponse.json();
-    const translatedLines = (translationResult.translatedText as string).split('\n');
+    const translatedText = translationResult.translatedText as string;
+    const translatedLines = translatedText.split('\n');
 
     const imageWidth = canvasElement.width;
     const imageHeight = canvasElement.height;
@@ -84,11 +82,25 @@ export const ocrAndTranslateImageLocal = async (
         }
     }
 
-    return results;
+    // Generate summary based on the full translated text
+    const fullTranslatedText = translatedLines.join(' ');
+    let summary = '';
+    if (fullTranslatedText.length > 0) {
+        summary = fullTranslatedText.length > 150 
+            ? fullTranslatedText.slice(0, 150) + "..." 
+            : `Resumo: ${fullTranslatedText}`;
+    }
+    
+    if (results.length === 0) return null;
+
+    return {
+        translatedBlocks: results,
+        summary: summary,
+    };
 
   } catch (error) {
     console.error('Error with local OCR and translation:', error);
-    return [];
+    return null;
   }
 };
 

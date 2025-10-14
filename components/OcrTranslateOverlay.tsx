@@ -1,23 +1,25 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { ocrAndTranslateImageLocal, terminateOcrWorker } from '../services/ocrService';
-import type { OcrResult } from '../services/ocrService';
+import type { OcrResult } from '../types';
 
 interface OcrTranslateOverlayProps {
   videoRef: React.RefObject<HTMLVideoElement>;
   enabled: boolean;
   targetLanguageCode: string;
+  onNewSummary: (summary: string) => void;
 }
 
 const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
   videoRef,
   enabled,
   targetLanguageCode,
+  onNewSummary,
 }) => {
   const [transBlocks, setTransBlocks] = useState<OcrResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const intervalRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const clearBlocksTimeoutRef = useRef<number | null>(null);
+  const clearResultTimeoutRef = useRef<number | null>(null);
 
   const analyzeFrameAndTranslate = useCallback(async () => {
     if (isProcessing || !videoRef.current) return;
@@ -52,42 +54,55 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
       
       const results = await ocrAndTranslateImageLocal(canvas, targetLanguageCode);
 
-      if (results && results.length > 0) {
-        setTransBlocks(results);
-        if (clearBlocksTimeoutRef.current) {
-          clearTimeout(clearBlocksTimeoutRef.current);
-        }
-        clearBlocksTimeoutRef.current = window.setTimeout(() => {
+      // Always clear the previous timeout
+      if (clearResultTimeoutRef.current) {
+        clearTimeout(clearResultTimeoutRef.current);
+      }
+
+      if (results && results.translatedBlocks.length > 0) {
+        setTransBlocks(results.translatedBlocks);
+        onNewSummary(results.summary);
+        
+        // Set a new timeout to clear everything
+        clearResultTimeoutRef.current = window.setTimeout(() => {
           setTransBlocks([]);
-          clearBlocksTimeoutRef.current = null;
-        }, 4000);
+          onNewSummary('');
+          clearResultTimeoutRef.current = null;
+        }, 5000); // Keep results for 5 seconds
+      } else {
+        // If no results, clear immediately
+        setTransBlocks([]);
+        onNewSummary('');
       }
     } catch (error) {
       console.error('Falha na análise do quadro:', error);
       setTransBlocks([]);
+      onNewSummary('');
     } finally {
       setIsProcessing(false);
     }
-  }, [isProcessing, videoRef, targetLanguageCode]);
+  }, [isProcessing, videoRef, targetLanguageCode, onNewSummary]);
 
   useEffect(() => {
     if (enabled) {
       setTransBlocks([]);
-      intervalRef.current = window.setInterval(analyzeFrameAndTranslate, 3000); // Increased interval for local processing
+      onNewSummary('');
+      intervalRef.current = window.setInterval(analyzeFrameAndTranslate, 3500); // Scan every 3.5 seconds
     } else {
       if (intervalRef.current) clearInterval(intervalRef.current);
-      if (clearBlocksTimeoutRef.current) clearTimeout(clearBlocksTimeoutRef.current);
+      if (clearResultTimeoutRef.current) clearTimeout(clearResultTimeoutRef.current);
       intervalRef.current = null;
-      clearBlocksTimeoutRef.current = null;
+      clearResultTimeoutRef.current = null;
       setTransBlocks([]);
+      onNewSummary('');
       terminateOcrWorker(); // Terminate worker when OCR is disabled
     }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
-      if (clearBlocksTimeoutRef.current) clearTimeout(clearBlocksTimeoutRef.current);
+      if (clearResultTimeoutRef.current) clearTimeout(clearResultTimeoutRef.current);
       terminateOcrWorker(); // Ensure worker is terminated on component unmount
     };
-  }, [enabled, analyzeFrameAndTranslate]);
+  }, [enabled, analyzeFrameAndTranslate, onNewSummary]);
 
   if (!enabled || transBlocks.length === 0) {
     return null;

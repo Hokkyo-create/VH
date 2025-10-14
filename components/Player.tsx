@@ -66,6 +66,7 @@ const Player: React.FC<PlayerProps> = ({ channel }) => {
   const [isOcrActive, setIsOcrActive] = useState(initialSettings.isOcrActive ?? false);
   const [subtitles, setSubtitles] = useState('');
   const [sceneDescription, setSceneDescription] = useState('');
+  const [ocrSummary, setOcrSummary] = useState('');
   const [targetLanguage, setTargetLanguage] = useState(initialSettings.language ?? 'Português');
   const [volume, setVolume] = useState(initialSettings.volume ?? 1);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -147,6 +148,7 @@ const Player: React.FC<PlayerProps> = ({ channel }) => {
     // Reset states for the new channel
     setSubtitles('');
     setSceneDescription('');
+    setOcrSummary('');
     setAiError(null);
     currentSpeakerRef.current = null;
     if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
@@ -409,16 +411,25 @@ const Player: React.FC<PlayerProps> = ({ channel }) => {
         videoRef={videoRef}
         enabled={isOcrActive}
         targetLanguageCode={targetLanguageCode}
+        onNewSummary={setOcrSummary}
       />
 
-      <div className={`absolute top-4 left-0 right-0 text-center p-2 pointer-events-none transition-opacity duration-500 ease-in-out ${sceneDescription ? 'opacity-100' : 'opacity-0'}`}>
+      {/* Scene Analysis and OCR Summary Container */}
+      <div className="absolute top-4 left-0 right-0 text-center p-2 pointer-events-none flex flex-col items-center gap-2">
         <p 
-          className="text-base font-serif italic bg-black/70 rounded-md px-3 py-1 inline-block text-gray-300"
+          className={`text-base font-serif italic bg-black/70 rounded-md px-3 py-1 inline-block text-gray-300 transition-opacity duration-500 ease-in-out ${sceneDescription ? 'opacity-100' : 'opacity-0'}`}
           style={{ textShadow: '1px 1px 3px rgba(0,0,0,0.7)' }}
         >
             {sceneDescription}
         </p>
+         <p 
+          className={`text-sm font-semibold bg-teal-900/80 rounded-md px-3 py-1 inline-block text-teal-200 max-w-xl transition-opacity duration-500 ease-in-out ${ocrSummary ? 'opacity-100' : 'opacity-0'}`}
+          style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}
+        >
+            {ocrSummary}
+        </p>
       </div>
+
 
       <div className={`absolute bottom-24 left-0 right-0 text-center p-4 pointer-events-none transition-opacity duration-300 ease-in-out ${subtitles ? 'opacity-100' : 'opacity-0'}`}>
         <p 
