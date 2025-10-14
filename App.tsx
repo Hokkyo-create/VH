@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Channel } from './types';
 import { parseM3U } from './services/m3uParser';
+import { loadSettings, saveSettings } from './services/storageService';
 import UrlInput from './components/UrlInput';
 import ChannelList from './components/ChannelList';
 import Player from './components/Player';
@@ -313,20 +314,9 @@ const App: React.FC = () => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true); // Start as true
 
-  useEffect(() => {
-    // Load pre-loaded channels on initial mount
-    try {
-      const parsedChannels = parseM3U(PRELOADED_SAMPLE_M3U);
-      setChannels(parsedChannels);
-    } catch (e) {
-      console.error("Failed to parse pre-loaded channels", e);
-      setError("Could not load initial channel list.");
-    }
-  }, []);
-
-  const processM3UContent = (m3uContent: string) => {
+  const processM3UContent = useCallback((m3uContent: string) => {
     setIsLoading(true);
     setError(null);
     setChannels([]);
@@ -334,19 +324,19 @@ const App: React.FC = () => {
     try {
         const parsedChannels = parseM3U(m3uContent);
         if(parsedChannels.length === 0) {
-          throw new Error('No channels found in the playlist or the format is incorrect.');
+          throw new Error('Nenhum canal encontrado na lista de reprodução ou o formato está incorreto.');
         }
         setChannels(parsedChannels);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+      setError(err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.');
     } finally {
         setIsLoading(false);
     }
-  }
+  }, []);
 
   const handleUrlSubmit = useCallback(async (url: string) => {
     if (!url) {
-      setError('Please enter a valid M3U playlist URL.');
+      setError('Por favor, insira uma URL de lista de reprodução M3U válida.');
       return;
     }
     setIsLoading(true);
@@ -360,19 +350,33 @@ const App: React.FC = () => {
       const response = await fetch(proxyUrl);
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch playlist: ${response.status} ${response.statusText}`);
+        throw new Error(`Falha ao buscar a lista de reprodução: ${response.status} ${response.statusText}`);
       }
       const m3uContent = await response.text();
       processM3UContent(m3uContent);
+      saveSettings({ m3uUrl: url });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+      setError(err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [processM3UContent]);
   
+  useEffect(() => {
+    const settings = loadSettings();
+    if (settings.m3uUrl) {
+      handleUrlSubmit(settings.m3uUrl);
+    } else {
+      processM3UContent(PRELOADED_SAMPLE_M3U);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only on initial mount
+
+
   const handleFileContent = (content: string) => {
     processM3UContent(content);
+    // Clear the saved URL so it doesn't load next time
+    saveSettings({ m3uUrl: '' });
   };
 
   const handleSelectChannel = useCallback((channel: Channel) => {

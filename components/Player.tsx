@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Hls from 'hls.js';
 import { Channel } from '../types';
 import * as geminiService from '../services/geminiService';
+import { loadSettings, saveSettings } from '../services/storageService';
 import { decode, decodeAudioData, resample } from '../utils/audio';
 import PlayerControls from './PlayerControls';
+import OcrTranslateOverlay from './OcrTranslateOverlay';
 import type { LiveServerMessage } from '@google/genai';
 
 interface PlayerProps {
@@ -41,6 +43,7 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
 
 const Player: React.FC<PlayerProps> = ({ channel }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const playerContainerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   
   // AI and Audio Graph Refs
@@ -53,14 +56,20 @@ const Player: React.FC<PlayerProps> = ({ channel }) => {
   const sourcesRef = useRef(new Set<AudioBufferSourceNode>());
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Load initial settings from localStorage
+  const initialSettings = loadSettings();
+
   // State
-  const [isDubbingActive, setIsDubbingActive] = useState(false);
-  const [isSubtitlesActive, setIsSubtitlesActive] = useState(false);
-  const [isSceneAnalysisActive, setIsSceneAnalysisActive] = useState(false);
+  const [isDubbingActive, setIsDubbingActive] = useState(initialSettings.isDubbingActive ?? false);
+  const [isSubtitlesActive, setIsSubtitlesActive] = useState(initialSettings.isSubtitlesActive ?? false);
+  const [isSceneAnalysisActive, setIsSceneAnalysisActive] = useState(initialSettings.isSceneAnalysisActive ?? false);
+  const [isOcrActive, setIsOcrActive] = useState(initialSettings.isOcrActive ?? false);
   const [subtitles, setSubtitles] = useState('');
   const [sceneDescription, setSceneDescription] = useState('');
-  const [targetLanguage, setTargetLanguage] = useState('Português');
+  const [targetLanguage, setTargetLanguage] = useState(initialSettings.language ?? 'Português');
+  const [volume, setVolume] = useState(initialSettings.volume ?? 1);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   // Logic refs
   const subtitleTimeoutRef = useRef<number | null>(null);
@@ -68,6 +77,14 @@ const Player: React.FC<PlayerProps> = ({ channel }) => {
   const sceneDescriptionTimeoutRef = useRef<number | null>(null);
   const justCompletedTurnRef = useRef(true); 
   const currentSpeakerRef = useRef<'Homem' | 'Mulher' | null>(null);
+
+  // Save settings to localStorage whenever they change
+  useEffect(() => { saveSettings({ isDubbingActive }); }, [isDubbingActive]);
+  useEffect(() => { saveSettings({ isSubtitlesActive }); }, [isSubtitlesActive]);
+  useEffect(() => { saveSettings({ isSceneAnalysisActive }); }, [isSceneAnalysisActive]);
+  useEffect(() => { saveSettings({ isOcrActive }); }, [isOcrActive]);
+  useEffect(() => { saveSettings({ language: targetLanguage }); }, [targetLanguage]);
+  useEffect(() => { saveSettings({ volume }); }, [volume]);
 
   const handleAiError = useCallback((message: string) => {
     console.error("AI Error:", message);
@@ -120,6 +137,7 @@ const Player: React.FC<PlayerProps> = ({ channel }) => {
       sourceNodeRef.current = source;
       const gain = context.createGain();
       gainNodeRef.current = gain;
+      gain.gain.value = 1; // Start at full volume, state will take over.
       source.connect(gain);
       gain.connect(context.destination);
     } catch (e) {
@@ -314,13 +332,55 @@ const Player: React.FC<PlayerProps> = ({ channel }) => {
     };
   }, [isDubbingActive, isSubtitlesActive, targetLanguage, handleMessage, handleAiError]);
 
-  // Effect 3: Manages the original video volume for dubbing.
+  // Effect 3: Manages the original video volume for dubbing and user volume.
   useEffect(() => {
     if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = isDubbingActive ? 0.2 : 1.0;
+      gainNodeRef.current.gain.value = isDubbingActive ? 0.2 * volume : volume;
     }
-  }, [isDubbingActive]);
+  }, [isDubbingActive, volume]);
 
+  const handleToggleSubtitles = () => {
+    setIsSubtitlesActive(p => !p);
+  };
+
+  const handleTogglePiP = useCallback(async () => {
+    if (!videoRef.current) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (document.pictureInPictureEnabled) {
+        await videoRef.current.requestPictureInPicture();
+      }
+    } catch (error) {
+      console.error("Error toggling Picture-in-Picture mode:", error);
+    }
+  }, []);
+
+  const handleToggleFullscreen = useCallback(() => {
+    const playerElement = playerContainerRef.current;
+    if (!playerElement) return;
+
+    if (!document.fullscreenElement) {
+      playerElement.requestFullscreen().catch((err) => {
+        console.error(`Erro ao tentar ativar o modo de tela cheia: ${err.message} (${err.name})`);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  }, []);
+
+  // Effect to sync fullscreen state with browser events (like pressing ESC)
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+  
+  const targetLanguageCode = SUPPORTED_LANGUAGES.find(l => l.name === targetLanguage)?.code ?? 'pt';
 
   if (!channel) {
     return (
@@ -341,9 +401,15 @@ const Player: React.FC<PlayerProps> = ({ channel }) => {
       : 'text-white';
 
   return (
-    <div className="relative bg-black aspect-video rounded-lg shadow-2xl group">
-      <video ref={videoRef} controls className="w-full h-full rounded-lg" crossOrigin="anonymous" />
+    <div ref={playerContainerRef} className="relative bg-black aspect-video rounded-lg shadow-2xl group">
+      <video ref={videoRef} className="w-full h-full rounded-lg" crossOrigin="anonymous" />
       <canvas ref={canvasRef} className="hidden" />
+
+      <OcrTranslateOverlay 
+        videoRef={videoRef}
+        enabled={isOcrActive}
+        targetLanguageCode={targetLanguageCode}
+      />
 
       <div className={`absolute top-4 left-0 right-0 text-center p-2 pointer-events-none transition-opacity duration-500 ease-in-out ${sceneDescription ? 'opacity-100' : 'opacity-0'}`}>
         <p 
@@ -373,12 +439,19 @@ const Player: React.FC<PlayerProps> = ({ channel }) => {
         isDubbingActive={isDubbingActive}
         onToggleDubbing={() => setIsDubbingActive(p => !p)}
         isSubtitlesActive={isSubtitlesActive}
-        onToggleSubtitles={() => setIsSubtitlesActive(p => !p)}
+        onToggleSubtitles={handleToggleSubtitles}
         isSceneAnalysisActive={isSceneAnalysisActive}
         onToggleSceneAnalysis={() => setIsSceneAnalysisActive(p => !p)}
+        isOcrActive={isOcrActive}
+        onToggleOcr={() => setIsOcrActive(p => !p)}
         targetLanguage={targetLanguage}
         onLanguageChange={setTargetLanguage}
         supportedLanguages={SUPPORTED_LANGUAGES}
+        volume={volume}
+        onVolumeChange={setVolume}
+        onTogglePiP={handleTogglePiP}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={handleToggleFullscreen}
       />
     </div>
   );
