@@ -28,6 +28,44 @@ async function getTesseractWorker(): Promise<any> {
     return tesseractWorker;
 }
 
+async function translateTextWithGemini(text: string, targetLanguageCode: string): Promise<string> {
+    if (!text.trim()) {
+        return "";
+    }
+    try {
+        const genAI = getAi();
+        // A simple mapping to provide a clearer language name to the model.
+        const languageMap: { [key: string]: string } = {
+            'pt': 'Português (Brasil)',
+            'en': 'Inglês',
+            'es': 'Espanhol',
+            'fr': 'Francês',
+            'de': 'Alemão',
+            'it': 'Italiano',
+            'ja': 'Japonês',
+            'ko': 'Coreano',
+            'ru': 'Russo',
+            'zh': 'Chinês',
+        };
+        const targetLanguageName = languageMap[targetLanguageCode as keyof typeof languageMap] || targetLanguageCode;
+
+        const response = await genAI.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [{
+                    text: `Você é um motor de tradução altamente eficiente. Traduza o seguinte texto em japonês para ${targetLanguageName}. Forneça apenas o texto traduzido bruto, sem frases introdutórias, explicações ou rótulos como "Tradução:". Preserve as quebras de linha do texto original.\n\nTexto em japonês:\n"${text}"`
+                }]
+            },
+        });
+        return response.text.trim();
+    } catch (error) {
+        console.error("Erro ao traduzir texto com Gemini:", error);
+        // Fallback para retornar o texto original em caso de erro
+        return text;
+    }
+}
+
+
 async function generateSummaryWithGemini(text: string): Promise<string> {
     if (!text.trim()) {
         return "";
@@ -71,24 +109,12 @@ export const ocrAndTranslateImageLocal = async (
         return null;
     }
     
-    const translateResponse = await fetch("https://libretranslate.de/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            q: joinedText,
-            source: "ja",
-            target: targetLanguageCode,
-            format: "text"
-        })
-    });
+    const translatedText = await translateTextWithGemini(joinedText, targetLanguageCode);
 
-    if (!translateResponse.ok) {
-        console.error(`LibreTranslate API error: ${translateResponse.statusText}`);
-        return null; // Return null on translation failure
+    if (!translatedText) {
+        return null; // Retorna nulo em caso de falha na tradução
     }
 
-    const translationResult = await translateResponse.json();
-    const translatedText = translationResult.translatedText as string;
     const translatedLines = translatedText.split('\n');
 
     const imageWidth = canvasElement.width;
@@ -127,7 +153,7 @@ export const ocrAndTranslateImageLocal = async (
     };
 
   } catch (error) {
-    console.error('Error with local OCR and translation:', error);
+    console.error('Erro com OCR e tradução local:', error);
     return null;
   }
 };
@@ -136,6 +162,6 @@ export const terminateOcrWorker = async () => {
     if (tesseractWorker) {
         await tesseractWorker.terminate();
         tesseractWorker = null;
-        console.log('Tesseract worker terminated.');
+        console.log('Worker do Tesseract finalizado.');
     }
 };

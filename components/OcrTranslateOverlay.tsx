@@ -68,7 +68,7 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
           setTransBlocks([]);
           onNewSummary('');
           clearResultTimeoutRef.current = null;
-        }, 5000); // Keep results for 5 seconds
+        }, 8000); // Keep results for 8 seconds
       } else {
         // If no results, clear immediately
         setTransBlocks([]);
