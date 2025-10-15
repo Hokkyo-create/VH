@@ -113,19 +113,33 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
       {transBlocks.map((block) => (
         <div
           key={block.id}
-          className="absolute bg-black/70 text-white p-1 rounded-sm text-center flex items-center justify-center"
+          className="absolute flex items-end justify-center p-1" // Align content to bottom-center
           style={{
             left: `${block.bbox.x * 100}%`,
             top: `${block.bbox.y * 100}%`,
             width: `${block.bbox.width * 100}%`,
             height: `${block.bbox.height * 100}%`,
-            fontSize: `clamp(8px, ${block.bbox.height * 100 * 0.6}vh, 24px)`,
-            lineHeight: 1.1,
-            textShadow: '1px 1px 2px rgba(0,0,0,0.9)',
           }}
           title={`Original: ${block.text}`}
         >
-          <span>{block.translatedText}</span>
+          <span
+            className="text-center"
+            style={{
+              padding: '0.2em 0.4em',
+              borderRadius: '4px',
+              color: '#FFFFE0', // Light yellow, great for subtitles
+              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+              fontSize: `clamp(10px, ${block.bbox.height * 100 * 0.7}vh, 28px)`,
+              lineHeight: 1.2,
+              // Create a solid outline effect for maximum readability
+              textShadow: '1px 1px 2px black, -1px -1px 2px black, 1px -1px 2px black, -1px 1px 2px black, 0 0 5px black',
+              boxDecorationBreak: 'clone',
+              // @ts-ignore
+              WebkitBoxDecorationBreak: 'clone',
+            }}
+          >
+            {block.translatedText}
+          </span>
         </div>
       ))}
     </div>

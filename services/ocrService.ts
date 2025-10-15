@@ -1,3 +1,4 @@
+import { GoogleGenAI } from '@google/genai';
 import { OcrResult } from '../types';
 
 // This declares the Tesseract object from the CDN script to TypeScript
@@ -8,6 +9,14 @@ export interface OcrAndSummaryResult {
   summary: string;
 }
 
+// Gemini setup
+let ai: GoogleGenAI | null = null;
+function getAi(): GoogleGenAI {
+    if (!ai) {
+        ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    }
+    return ai;
+}
 
 let tesseractWorker: any | null = null;
 
@@ -18,6 +27,30 @@ async function getTesseractWorker(): Promise<any> {
     }
     return tesseractWorker;
 }
+
+async function generateSummaryWithGemini(text: string): Promise<string> {
+    if (!text.trim()) {
+        return "";
+    }
+    try {
+        const genAI = getAi();
+        const response = await genAI.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [{
+                    text: `Você é um especialista em resumir textos exibidos em uma tela de TV. Resuma o seguinte texto, que foi traduzido de outro idioma, em uma única frase concisa e informativa para um espectador. Seja direto e claro. Responda em português do Brasil.\n\nTexto para resumir:\n"${text}"`
+                }]
+            },
+        });
+        return response.text.trim();
+    } catch (error) {
+        console.error("Error generating summary with Gemini:", error);
+        // Fallback to simple truncation on error
+        const prefix = "Resumo: ";
+        return text.length > 150 ? prefix + text.slice(0, 150) + "..." : prefix + text;
+    }
+}
+
 
 export const ocrAndTranslateImageLocal = async (
   canvasElement: HTMLCanvasElement,
@@ -82,16 +115,11 @@ export const ocrAndTranslateImageLocal = async (
         }
     }
 
-    // Generate summary based on the full translated text
-    const fullTranslatedText = translatedLines.join(' ');
-    let summary = '';
-    if (fullTranslatedText.length > 0) {
-        summary = fullTranslatedText.length > 150 
-            ? fullTranslatedText.slice(0, 150) + "..." 
-            : `Resumo: ${fullTranslatedText}`;
-    }
-    
     if (results.length === 0) return null;
+    
+    // Generate summary with Gemini
+    const fullTranslatedText = translatedLines.join(' ');
+    const summary = await generateSummaryWithGemini(fullTranslatedText);
 
     return {
         translatedBlocks: results,

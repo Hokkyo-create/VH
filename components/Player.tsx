@@ -13,7 +13,7 @@ interface PlayerProps {
 }
 
 const SUPPORTED_LANGUAGES = [
-    { code: 'pt', name: 'Português' },
+    { code: 'pt', name: 'Português (Brasil)' },
     { code: 'en', name: 'Inglês' },
     { code: 'es', name: 'Espanhol' },
     { code: 'fr', name: 'Francês' },
@@ -67,7 +67,7 @@ const Player: React.FC<PlayerProps> = ({ channel }) => {
   const [subtitles, setSubtitles] = useState('');
   const [sceneDescription, setSceneDescription] = useState('');
   const [ocrSummary, setOcrSummary] = useState('');
-  const [targetLanguage, setTargetLanguage] = useState(initialSettings.language ?? 'Português');
+  const [targetLanguage, setTargetLanguage] = useState(initialSettings.language ?? 'Português (Brasil)');
   const [volume, setVolume] = useState(initialSettings.volume ?? 1);
   const [aiError, setAiError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
