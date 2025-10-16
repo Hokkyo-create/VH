@@ -385,10 +385,19 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
       if (currentTurnTranscriptionRef.current.text === '') {
           // Início de um novo turno de fala
           currentTurnTranscriptionRef.current.start = now;
-          if (text.startsWith('[HOMEM]')) { currentTurnTranscriptionRef.current.speaker = 'Homem'; text = text.substring('[HOMEM]'.length); }
-          else if (text.startsWith('[MULHER]')) { currentTurnTranscriptionRef.current.speaker = 'Mulher'; text = text.substring('[MULHER]'.length); }
-          else { currentTurnTranscriptionRef.current.speaker = null; }
+          if (text.startsWith('HOMEM:')) {
+              currentTurnTranscriptionRef.current.speaker = 'Homem';
+          } else if (text.startsWith('MULHER:')) {
+              currentTurnTranscriptionRef.current.speaker = 'Mulher';
+          } else {
+              currentTurnTranscriptionRef.current.speaker = null;
+          }
       }
+
+      // Removemos o prefixo de CADA chunk para construir o texto da legenda.
+      if (text.startsWith('HOMEM:')) text = text.substring('HOMEM:'.length);
+      if (text.startsWith('MULHER:')) text = text.substring('MULHER:'.length);
+      
       currentTurnTranscriptionRef.current.text += text.trim() + ' ';
       
       // Atualiza a legenda em streaming

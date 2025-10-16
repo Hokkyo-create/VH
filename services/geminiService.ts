@@ -75,25 +75,17 @@ export const startTranslationSession = async (
     
     let systemInstruction = `Você é um intérprete de IA de classe mundial para transmissões ao vivo. Sua tarefa é ouvir o áudio em japonês e fornecer dublagem e legendas em ${targetLanguage}. **SUA PRIORIDADE MÁXIMA É A VELOCIDADE E A BAIXÍSSIMA LATÊNCIA.**
 
-1.  **MODO INTÉRPRETE SIMULTÂNEO (CRÍTICO):** Aja como um intérprete de conferência. NÃO espere por frases completas. Comece a traduzir e falar IMEDIATAMENTE ao ouvir a fala. Esteja preparado para fala rápida e sobreposta. Mantenha o fluxo, mesmo que a tradução seja um pouco mais literal. A latência é mais importante que a perfeição gramatical.
+1.  **MODO INTÉRPRETE SIMULTÂNEO (CRÍTICO):** Comece a traduzir e falar IMEDIATAMENTE ao ouvir a fala. A latência é mais importante que a perfeição gramatical.
 
-2.  **DETECÇÃO DE GÊNERO (INSTANTÂNEA):** Sua primeira tarefa a cada novo locutor é identificar se a voz é **MASCULINA** ou **FEMININA**. Esta detecção DEVE ser instantânea e controlar as tarefas abaixo.
+2.  **DETECÇÃO DE GÊNERO E ETIQUETAGEM (FORMATO ESTRITO):** Para cada novo trecho de fala, identifique o gênero do locutor e prefixe a tradução com a etiqueta 'HOMEM:' ou 'MULHER:'. Sua resposta de texto deve conter APENAS a tradução etiquetada. A API usará esta etiqueta para selecionar a voz correta.
+    *   **Exemplo de Resposta:** \`HOMEM: O tempo está ótimo hoje, não é?\`
+    *   **Exemplo de Resposta:** \`MULHER: Sim, concordo plenamente! Um lindo céu azul.\`
 
-3.  **DUBLAGEM COM VOZ DINÂMICA:** Com base no gênero detectado, altere sua voz de saída IMEDIATAMENTE:
-    *   **Locutor MASCULINO:** Emule a voz pré-construída '${maleVoiceName}' (tom mais grave).
-    *   **Locutor FEMININO:** Emule a voz pré-construída '${femaleVoiceName}' (tom mais agudo).
-
-4.  **LEGENDAS COM IDENTIFICAÇÃO (FORMATO ESTRITO):**
-    *   Comece CADA legenda com '[HOMEM]' ou '[MULHER]'.
-    *   Forneça uma tradução RESUMIDA e concisa.
-    *   Exemplo: '[HOMEM] O tempo está ótimo hoje.'
-    *   Exemplo: '[MULHER] Concordo, céu azul!'
-
-5.  **IDIOMA DE DESTINO:** Para 'Português', use **Português do Brasil**.`;
+3.  **IDIOMA DE DESTINO:** Para 'Português', use **Português do Brasil**.`;
 
 
     if (programContext?.title) {
-        systemInstruction += `\n\n6. **Contexto do Programa Atual:** Você está traduzindo um programa chamado "${programContext.title}".`;
+        systemInstruction += `\n\n4. **Contexto do Programa Atual:** Você está traduzindo um programa chamado "${programContext.title}".`;
         if (programContext.description) {
             systemInstruction += ` A descrição é: "${programContext.description}".`;
         }
@@ -122,8 +114,22 @@ export const startTranslationSession = async (
             inputAudioTranscription: {},
             systemInstruction: systemInstruction,
             speechConfig: {
-                // Use a neutral base voice for the session. The prompt will handle emulation.
-                voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
+                multiSpeakerVoiceConfig: {
+                    speakerVoiceConfigs: [
+                        {
+                            speaker: 'HOMEM',
+                            voiceConfig: {
+                                prebuiltVoiceConfig: { voiceName: maleVoiceName }
+                            }
+                        },
+                        {
+                            speaker: 'MULHER',
+                            voiceConfig: {
+                                prebuiltVoiceConfig: { voiceName: femaleVoiceName }
+                            }
+                        }
+                    ]
+                }
             },
         },
     });
