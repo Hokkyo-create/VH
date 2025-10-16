@@ -113,7 +113,7 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
       {transBlocks.map((block) => (
         <div
           key={block.id}
-          className="absolute flex items-end justify-center p-1" // Align content to bottom-center
+          className="absolute flex items-center justify-center p-1" // Align content to center
           style={{
             left: `${block.bbox.x * 100}%`,
             top: `${block.bbox.y * 100}%`,
@@ -125,17 +125,11 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
           <span
             className="text-center"
             style={{
-              padding: '0.2em 0.4em',
-              borderRadius: '4px',
               color: '#FFFFE0', // Light yellow, great for subtitles
-              backgroundColor: 'rgba(0, 0, 0, 0.75)',
               fontSize: `clamp(10px, ${block.bbox.height * 100 * 0.7}vh, 28px)`,
               lineHeight: 1.2,
-              // Create a solid outline effect for maximum readability
+              // Create a solid outline effect for maximum readability without a background
               textShadow: '1px 1px 2px black, -1px -1px 2px black, 1px -1px 2px black, -1px 1px 2px black, 0 0 5px black',
-              boxDecorationBreak: 'clone',
-              // @ts-ignore
-              WebkitBoxDecorationBreak: 'clone',
             }}
           >
             {block.translatedText}

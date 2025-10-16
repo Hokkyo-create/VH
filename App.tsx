@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Channel } from './types';
+import { Channel, EpgData, Programme } from './types';
 import { parseM3U } from './services/m3uParser';
+import { fetchAndParseEPG } from './services/epgService';
 import { loadSettings, saveSettings } from './services/storageService';
 import UrlInput from './components/UrlInput';
 import ChannelList from './components/ChannelList';
 import Player from './components/Player';
+import ProgramInfo from './components/ProgramInfo';
 
 // The comprehensive M3U playlist provided by the user.
 const PRELOADED_SAMPLE_M3U = `#EXTM3U url-tvg="https://epg.freejptv.com/jp.xml,https://animenosekai.github.io/japanterebi-xmltv/guide.xml" tvg-shift=0 m3uautoload=1
@@ -315,18 +317,37 @@ const App: React.FC = () => {
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true); // Start as true
+  const [epgData, setEpgData] = useState<EpgData | null>(null);
+  const [currentProgram, setCurrentProgram] = useState<Programme | null>(null);
+  const [targetLanguage, setTargetLanguage] = useState(
+    () => loadSettings().language ?? 'Português (Brasil)'
+  );
 
-  const processM3UContent = useCallback((m3uContent: string) => {
+  useEffect(() => {
+    saveSettings({ language: targetLanguage });
+  }, [targetLanguage]);
+
+  const processM3UContent = useCallback(async (m3uContent: string) => {
     setIsLoading(true);
     setError(null);
     setChannels([]);
     setSelectedChannel(null);
+    setEpgData(null);
+    setCurrentProgram(null);
     try {
-        const parsedChannels = parseM3U(m3uContent);
+        const { channels: parsedChannels, epgUrls } = parseM3U(m3uContent);
         if(parsedChannels.length === 0) {
           throw new Error('Nenhum canal encontrado na lista de reprodução ou o formato está incorreto.');
         }
         setChannels(parsedChannels);
+
+        if (epgUrls.length > 0) {
+          // Intentionally not awaiting this to allow the UI to render the channels list faster.
+          // The EPG data will populate in the background.
+          fetchAndParseEPG(epgUrls)
+            .then(setEpgData)
+            .catch(err => console.error("Falha ao carregar dados do EPG:", err));
+        }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.');
     } finally {
@@ -343,17 +364,19 @@ const App: React.FC = () => {
     setError(null);
     setChannels([]);
     setSelectedChannel(null);
+    setEpgData(null);
+    setCurrentProgram(null);
 
     try {
       // Use a CORS proxy to fetch the playlist
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
       const response = await fetch(proxyUrl);
       
       if (!response.ok) {
         throw new Error(`Falha ao buscar a lista de reprodução: ${response.status} ${response.statusText}`);
       }
       const m3uContent = await response.text();
-      processM3UContent(m3uContent);
+      await processM3UContent(m3uContent);
       saveSettings({ m3uUrl: url });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.');
@@ -381,6 +404,7 @@ const App: React.FC = () => {
 
   const handleSelectChannel = useCallback((channel: Channel) => {
     setSelectedChannel(channel);
+    setCurrentProgram(null); // Reset program info when changing channel
   }, []);
 
   return (
@@ -399,8 +423,20 @@ const App: React.FC = () => {
         {error && <p className="text-red-400 text-center mt-4 bg-red-900/50 p-3 rounded-md">{error}</p>}
         
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-8 xl:col-span-9">
-            <Player channel={selectedChannel} />
+          <div className="lg:col-span-8 xl:col-span-9 flex flex-col gap-6">
+            <Player 
+              channel={selectedChannel} 
+              epgData={epgData}
+              currentProgram={currentProgram}
+              onProgramChange={setCurrentProgram}
+              targetLanguage={targetLanguage}
+              onLanguageChange={setTargetLanguage}
+            />
+            <ProgramInfo 
+              channel={selectedChannel} 
+              program={currentProgram}
+              targetLanguage={targetLanguage}
+            />
           </div>
           <div className="lg:col-span-4 xl:col-span-3">
             <ChannelList channels={channels} onSelectChannel={handleSelectChannel} selectedChannelUrl={selectedChannel?.url} />

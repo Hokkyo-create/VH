@@ -32,20 +32,15 @@ async function translateTextWithGemini(text: string, targetLanguageCode: string)
     if (!text.trim()) {
         return "";
     }
+    if (targetLanguageCode === 'ja') {
+        return text;
+    }
     try {
         const genAI = getAi();
-        // A simple mapping to provide a clearer language name to the model.
         const languageMap: { [key: string]: string } = {
-            'pt': 'Português (Brasil)',
-            'en': 'Inglês',
-            'es': 'Espanhol',
-            'fr': 'Francês',
-            'de': 'Alemão',
-            'it': 'Italiano',
-            'ja': 'Japonês',
-            'ko': 'Coreano',
-            'ru': 'Russo',
-            'zh': 'Chinês',
+            'pt': 'Português (Brasil)', 'en': 'Inglês', 'es': 'Espanhol',
+            'fr': 'Francês', 'de': 'Alemão', 'it': 'Italiano',
+            'ja': 'Japonês', 'ko': 'Coreano', 'ru': 'Russo', 'zh': 'Chinês',
         };
         const targetLanguageName = languageMap[targetLanguageCode as keyof typeof languageMap] || targetLanguageCode;
 
@@ -53,15 +48,15 @@ async function translateTextWithGemini(text: string, targetLanguageCode: string)
             model: 'gemini-2.5-flash',
             contents: {
                 parts: [{
-                    text: `Você é um motor de tradução altamente eficiente. Traduza o seguinte texto em japonês para ${targetLanguageName}. Forneça apenas o texto traduzido bruto, sem frases introdutórias, explicações ou rótulos como "Tradução:". Preserve as quebras de linha do texto original.\n\nTexto em japonês:\n"${text}"`
+                    text: `Aja como um tradutor. Traduza o texto a seguir do japonês para ${targetLanguageName}. Responda APENAS com o texto traduzido. Mantenha as quebras de linha.\n\n${text}`
                 }]
             },
         });
         return response.text.trim();
     } catch (error) {
         console.error("Erro ao traduzir texto com Gemini:", error);
-        // Fallback para retornar o texto original em caso de erro
-        return text;
+        // Fallback to an error message instead of original text
+        return "[Erro na Tradução]";
     }
 }
 

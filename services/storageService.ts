@@ -6,6 +6,8 @@ export interface AppSettings {
   isSubtitlesActive?: boolean;
   isSceneAnalysisActive?: boolean;
   isOcrActive?: boolean;
+  maleDubbingVoice?: string;
+  femaleDubbingVoice?: string;
 }
 
 const SETTINGS_KEY = 'ai_iptv_player_settings_v1';
@@ -25,7 +27,6 @@ export const saveSettings = (newSettings: Partial<AppSettings>): void => {
     const currentSettings = loadSettings();
     const updatedSettings = { ...currentSettings, ...newSettings };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(updatedSettings));
-  // FIX: Added curly braces to the catch block to fix the syntax error.
   } catch (e) {
     console.error("Failed to save settings to localStorage", e);
   }

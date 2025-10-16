@@ -3,6 +3,7 @@ export interface Channel {
   logo: string | null;
   url: string;
   group: string;
+  tvgId: string | null;
 }
 
 export interface OcrResult {
@@ -15,4 +16,22 @@ export interface OcrResult {
     width: number;
     height: number;
   };
+}
+
+export interface Programme {
+  start: Date;
+  stop: Date;
+  title: string;
+  desc?: string;
+  channel: string; // tvg-id
+}
+
+export interface EpgData {
+  [channelId: string]: Programme[];
+}
+
+export interface DubbingSegment {
+  start: number;
+  end: number;
+  buffer: AudioBuffer;
 }
