@@ -8,6 +8,7 @@ export interface AppSettings {
   isOcrActive?: boolean;
   maleDubbingVoice?: string;
   femaleDubbingVoice?: string;
+  apiKey?: string;
 }
 
 const SETTINGS_KEY = 'ai_iptv_player_settings_v1';

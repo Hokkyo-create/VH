@@ -23,6 +23,7 @@ interface PlayerControlsProps {
   onToggleSceneAnalysis: () => void;
   isOcrActive: boolean;
   onToggleOcr: () => void;
+  areAiFeaturesDisabled: boolean;
   targetLanguage: string;
   onLanguageChange: (lang: string) => void;
   supportedLanguages: { code: string; name: string }[];
@@ -55,6 +56,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   onToggleSceneAnalysis,
   isOcrActive,
   onToggleOcr,
+  areAiFeaturesDisabled,
   targetLanguage,
   onLanguageChange,
   supportedLanguages,
@@ -184,8 +186,9 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
                 <select
                     value={maleDubbingVoice}
                     onChange={(e) => onMaleDubbingVoiceChange(e.target.value)}
-                    className="bg-gray-800/80 text-white border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer text-xs sm:text-sm hover:bg-gray-700/80"
+                    className="bg-gray-800/80 text-white border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer text-xs sm:text-sm hover:bg-gray-700/80 disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Voz de IA a ser usada para locutores masculinos"
+                    disabled={areAiFeaturesDisabled}
                 >
                     {supportedMaleVoices.map((voice) => (
                         <option key={voice.code} value={voice.code} className="bg-gray-800">
@@ -196,8 +199,9 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
                 <select
                     value={femaleDubbingVoice}
                     onChange={(e) => onFemaleDubbingVoiceChange(e.target.value)}
-                    className="bg-gray-800/80 text-white border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer text-xs sm:text-sm hover:bg-gray-700/80"
+                    className="bg-gray-800/80 text-white border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer text-xs sm:text-sm hover:bg-gray-700/80 disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Voz de IA a ser usada para locutoras femininas"
+                    disabled={areAiFeaturesDisabled}
                 >
                     {supportedFemaleVoices.map((voice) => (
                         <option key={voice.code} value={voice.code} className="bg-gray-800">
@@ -208,32 +212,36 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
             </div>
             <div className="h-6 w-px bg-gray-600 mx-1"></div>
             <button
-            onClick={onToggleOcr}
-            title={isOcrActive ? 'Desativar Tradução de Tela (OCR)' : 'Ativar Tradução de Tela (OCR)'}
-            className="p-2 rounded-full hover:bg-white/10 transition-colors"
+              onClick={onToggleOcr}
+              title={areAiFeaturesDisabled ? 'Adicione uma chave de API para ativar o OCR' : (isOcrActive ? 'Desativar Tradução de Tela (OCR)' : 'Ativar Tradução de Tela (OCR)')}
+              className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={areAiFeaturesDisabled}
             >
-            <OcrIcon active={isOcrActive} />
+              <OcrIcon active={isOcrActive} />
             </button>
             <button
-            onClick={onToggleSceneAnalysis}
-            title={isSceneAnalysisActive ? 'Desativar Análise de Cena' : 'Ativar Análise de Cena'}
-            className="p-2 rounded-full hover:bg-white/10 transition-colors"
+              onClick={onToggleSceneAnalysis}
+              title={areAiFeaturesDisabled ? 'Adicione uma chave de API para ativar a Análise de Cena' : (isSceneAnalysisActive ? 'Desativar Análise de Cena' : 'Ativar Análise de Cena')}
+              className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={areAiFeaturesDisabled}
             >
-            <SceneAnalysisIcon active={isSceneAnalysisActive} />
+              <SceneAnalysisIcon active={isSceneAnalysisActive} />
             </button>
             <button
-            onClick={onToggleSubtitles}
-            title={isSubtitlesActive ? 'Desativar Legendas' : 'Ativar Legendas'}
-            className="p-2 rounded-full hover:bg-white/10 transition-colors"
+              onClick={onToggleSubtitles}
+              title={areAiFeaturesDisabled ? 'Adicione uma chave de API para ativar as Legendas' : (isSubtitlesActive ? 'Desativar Legendas' : 'Ativar Legendas')}
+              className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={areAiFeaturesDisabled}
             >
-            <SubtitlesIcon active={isSubtitlesActive} />
+              <SubtitlesIcon active={isSubtitlesActive} />
             </button>
             <button
-            onClick={onToggleDubbing}
-            title={isDubbingActive ? 'Desativar Dublagem com IA' : 'Ativar Dublagem com IA'}
-            className="p-2 rounded-full hover:bg-white/10 transition-colors"
+              onClick={onToggleDubbing}
+              title={areAiFeaturesDisabled ? 'Adicione uma chave de API para ativar a Dublagem' : (isDubbingActive ? 'Desativar Dublagem com IA' : 'Ativar Dublagem com IA')}
+              className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={areAiFeaturesDisabled}
             >
-            <DubbingIcon active={isDubbingActive} />
+              <DubbingIcon active={isDubbingActive} />
             </button>
             <div className="h-6 w-px bg-gray-600 mx-1"></div>
             <button

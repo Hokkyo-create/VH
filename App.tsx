@@ -7,6 +7,8 @@ import UrlInput from './components/UrlInput';
 import ChannelList from './components/ChannelList';
 import Player from './components/Player';
 import ProgramInfo from './components/ProgramInfo';
+import SettingsModal from './components/SettingsModal';
+import SettingsIcon from './components/icons/SettingsIcon';
 
 // The comprehensive M3U playlist provided by the user.
 const PRELOADED_SAMPLE_M3U = `#EXTM3U url-tvg="https://epg.freejptv.com/jp.xml,https://animenosekai.github.io/japanterebi-xmltv/guide.xml" tvg-shift=0 m3uautoload=1
@@ -316,9 +318,12 @@ const App: React.FC = () => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true); // Start as true
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [epgData, setEpgData] = useState<EpgData | null>(null);
   const [currentProgram, setCurrentProgram] = useState<Programme | null>(null);
+  const [apiKey, setApiKey] = useState<string | null>(() => loadSettings().apiKey ?? null);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [m3uUrl, setM3uUrl] = useState(() => loadSettings().m3uUrl ?? '');
   const [targetLanguage, setTargetLanguage] = useState(
     () => loadSettings().language ?? 'Português (Brasil)'
   );
@@ -326,6 +331,18 @@ const App: React.FC = () => {
   useEffect(() => {
     saveSettings({ language: targetLanguage });
   }, [targetLanguage]);
+
+  useEffect(() => {
+    if (!apiKey) {
+      setIsSettingsModalOpen(true);
+    }
+  }, [apiKey]);
+
+  const handleSaveApiKey = (newApiKey: string) => {
+    setApiKey(newApiKey);
+    saveSettings({ apiKey: newApiKey });
+    setIsSettingsModalOpen(false);
+  };
 
   const processM3UContent = useCallback(async (m3uContent: string) => {
     setIsLoading(true);
@@ -342,8 +359,6 @@ const App: React.FC = () => {
         setChannels(parsedChannels);
 
         if (epgUrls.length > 0) {
-          // Intentionally not awaiting this to allow the UI to render the channels list faster.
-          // The EPG data will populate in the background.
           fetchAndParseEPG(epgUrls)
             .then(setEpgData)
             .catch(err => console.error("Falha ao carregar dados do EPG:", err));
@@ -366,9 +381,9 @@ const App: React.FC = () => {
     setSelectedChannel(null);
     setEpgData(null);
     setCurrentProgram(null);
+    setM3uUrl(url);
 
     try {
-      // Use a CORS proxy to fetch the playlist
       const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
       const response = await fetch(proxyUrl);
       
@@ -392,19 +407,24 @@ const App: React.FC = () => {
     } else {
       processM3UContent(PRELOADED_SAMPLE_M3U);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only on initial mount
+  }, [handleUrlSubmit, processM3UContent]);
 
 
   const handleFileContent = (content: string) => {
+    setM3uUrl(''); // Clear URL input when a file is loaded
     processM3UContent(content);
-    // Clear the saved URL so it doesn't load next time
     saveSettings({ m3uUrl: '' });
+  };
+
+  const handleClearUrl = () => {
+    setM3uUrl('');
+    saveSettings({ m3uUrl: '' });
+    processM3UContent(PRELOADED_SAMPLE_M3U);
   };
 
   const handleSelectChannel = useCallback((channel: Channel) => {
     setSelectedChannel(channel);
-    setCurrentProgram(null); // Reset program info when changing channel
+    setCurrentProgram(null);
   }, []);
 
   return (
@@ -414,18 +434,48 @@ const App: React.FC = () => {
           <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-blue-500">
             Player de IPTV com IA
           </h1>
-          <p className="text-sm text-gray-400 hidden sm:block">Tradução, Dublagem e Legendas em Tempo Real</p>
+          <div className="flex items-center gap-4">
+            {/* FIX: Updated text to refer to Gemini instead of OpenAI. */}
+            <p className="text-sm text-gray-400 hidden sm:block">Dublagem e Legendas com IA do Gemini</p>
+            <button
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="p-2 rounded-full hover:bg-gray-700 transition-colors"
+                title="Configurações"
+            >
+                <SettingsIcon />
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="container mx-auto p-4 flex-grow">
-        <UrlInput onSubmit={handleUrlSubmit} onFileContent={handleFileContent} isLoading={isLoading} />
+        {!apiKey && (
+            <div className="bg-yellow-900/50 border border-yellow-700 text-yellow-200 px-4 py-3 rounded-lg relative mb-4 text-center" role="alert">
+                <strong className="font-bold">Ação necessária:</strong>
+                {/* FIX: Updated text to refer to Gemini instead of OpenAI. */}
+                <span className="block sm:inline ml-2">As funções de IA estão desativadas. Por favor, 
+                    <button onClick={() => setIsSettingsModalOpen(true)} className="font-bold underline hover:text-yellow-100 mx-1">
+                        adicione sua chave de API do Gemini
+                    </button> 
+                para continuar.</span>
+            </div>
+        )}
+        <UrlInput 
+            onSubmit={handleUrlSubmit} 
+            onFileContent={handleFileContent} 
+            isLoading={isLoading}
+            m3uUrl={m3uUrl}
+            onUrlChange={setM3uUrl}
+            onClear={handleClearUrl}
+        />
         {error && <p className="text-red-400 text-center mt-4 bg-red-900/50 p-3 rounded-md">{error}</p>}
         
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-8 xl:col-span-9 flex flex-col gap-6">
             <Player 
               channel={selectedChannel} 
+              apiKey={apiKey}
+              onInvalidApiKey={() => setIsSettingsModalOpen(true)}
               epgData={epgData}
               currentProgram={currentProgram}
               onProgramChange={setCurrentProgram}
@@ -436,6 +486,7 @@ const App: React.FC = () => {
               channel={selectedChannel} 
               program={currentProgram}
               targetLanguage={targetLanguage}
+              apiKey={apiKey}
             />
           </div>
           <div className="lg:col-span-4 xl:col-span-3">
@@ -444,8 +495,15 @@ const App: React.FC = () => {
         </div>
       </main>
       <footer className="bg-gray-800 text-center p-4 text-sm text-gray-500 mt-8">
-        <p>&copy; {new Date().getFullYear()} Player de IPTV com IA. Desenvolvido com Gemini.</p>
+        {/* FIX: Updated text to refer to Gemini instead of OpenAI. */}
+        <p>&copy; {new Date().getFullYear()} Player de IPTV com IA. Desenvolvido com a API do Gemini.</p>
       </footer>
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        onSave={handleSaveApiKey}
+        currentApiKey={apiKey}
+      />
     </div>
   );
 };

@@ -10,6 +10,8 @@ import type { LiveServerMessage } from '@google/genai';
 
 interface PlayerProps {
   channel: Channel | null;
+  apiKey: string | null;
+  onInvalidApiKey: () => void;
   epgData: EpgData | null;
   currentProgram: Programme | null;
   onProgramChange: (program: Programme | null) => void;
@@ -67,7 +69,7 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
 };
 
 
-const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onProgramChange, targetLanguage, onLanguageChange }) => {
+const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgData, currentProgram, onProgramChange, targetLanguage, onLanguageChange }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -122,13 +124,16 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
   useEffect(() => { saveSettings({ femaleDubbingVoice }); }, [femaleDubbingVoice]);
   useEffect(() => { saveSettings({ volume }); }, [volume]);
 
-  const handleAiError = useCallback((message: string) => {
+  const handleAiError = useCallback((message: string, isAuthError: boolean = false) => {
     console.error("Erro de IA:", message);
     setAiError(message);
     setIsDubbingActive(false);
     setIsSubtitlesActive(false);
     setIsSceneAnalysisActive(false);
-  }, []);
+    if (isAuthError) {
+      onInvalidApiKey();
+    }
+  }, [onInvalidApiKey]);
 
   // Efeito para ocultar automaticamente a mensagem de erro da IA
   useEffect(() => {
@@ -337,7 +342,7 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
 
 
   const runSceneAnalysis = useCallback(async () => {
-    if (!isSceneAnalysisActive || !videoRef.current || !canvasRef.current) return;
+    if (!isSceneAnalysisActive || !videoRef.current || !canvasRef.current || !apiKey) return;
     
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -352,7 +357,7 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
         if (blob) {
             try {
                 const base64Data = await blobToBase64(blob);
-                const description = await geminiService.analyzeScene(base64Data);
+                const description = await geminiService.analyzeScene(apiKey, base64Data);
                 if (description) {
                     setSceneDescription(description);
                     if (sceneDescriptionTimeoutRef.current) {
@@ -367,7 +372,7 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
             }
         }
     }, 'image/jpeg', 0.8);
-  }, [isSceneAnalysisActive, handleAiError]);
+  }, [isSceneAnalysisActive, handleAiError, apiKey]);
 
   const handleMessage = useCallback(async (message: LiveServerMessage) => {
     if (message.serverContent?.outputTranscription || message.serverContent?.inputTranscription) {
@@ -379,43 +384,51 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
 
     // Processamento de Legendas em Streaming
     if (isSubtitlesActive && message.serverContent?.outputTranscription) {
-      let text = message.serverContent.outputTranscription.text;
+      let textChunk = message.serverContent.outputTranscription.text;
       const now = videoRef.current?.currentTime ?? 0;
+      const turnRef = currentTurnTranscriptionRef; // Shorter alias
 
-      if (currentTurnTranscriptionRef.current.text === '') {
-          // Início de um novo turno de fala
-          currentTurnTranscriptionRef.current.start = now;
-          if (text.startsWith('HOMEM:')) {
-              currentTurnTranscriptionRef.current.speaker = 'Homem';
-          } else if (text.startsWith('MULHER:')) {
-              currentTurnTranscriptionRef.current.speaker = 'Mulher';
+      if (turnRef.current.text === '') { // This is the first chunk of a new turn
+          turnRef.current.start = now;
+          if (textChunk.startsWith('HOMEM:')) {
+              turnRef.current.speaker = 'Homem';
+              textChunk = textChunk.substring('HOMEM:'.length);
+          } else if (textChunk.startsWith('MULHER:')) {
+              turnRef.current.speaker = 'Mulher';
+              textChunk = textChunk.substring('MULHER:'.length);
           } else {
-              currentTurnTranscriptionRef.current.speaker = null;
+              turnRef.current.speaker = null;
           }
       }
-
-      // Removemos o prefixo de CADA chunk para construir o texto da legenda.
-      if (text.startsWith('HOMEM:')) text = text.substring('HOMEM:'.length);
-      if (text.startsWith('MULHER:')) text = text.substring('MULHER:'.length);
       
-      currentTurnTranscriptionRef.current.text += text.trim() + ' ';
+      const processedChunk = textChunk.trim();
+      if (processedChunk) {
+        turnRef.current.text += (turnRef.current.text ? ' ' : '') + processedChunk;
+      }
       
-      // Atualiza a legenda em streaming
-      setStreamingSubtitle({
-          text: currentTurnTranscriptionRef.current.text,
-          speaker: currentTurnTranscriptionRef.current.speaker,
-          start: currentTurnTranscriptionRef.current.start,
-          end: now + 2, // Mantém a legenda na tela por 2 segundos após a última palavra
-      });
+      // Update the streaming subtitle if there's text
+      if (turnRef.current.text) {
+        setStreamingSubtitle({
+            text: turnRef.current.text,
+            speaker: turnRef.current.speaker,
+            start: turnRef.current.start,
+            end: now + 2, // Keep subtitle on screen for 2 seconds after last word
+        });
+      }
     }
     
     if (message.serverContent?.turnComplete) {
         const turn = currentTurnTranscriptionRef.current;
         const end = videoRef.current?.currentTime ?? 0;
         if (turn.text && end > turn.start) {
-            subtitleHistoryRef.current.push({ text: turn.text.trim(), speaker: turn.speaker, start: turn.start, end });
+            subtitleHistoryRef.current.push({ 
+                text: turn.text.trim(), 
+                speaker: turn.speaker, 
+                start: turn.start, 
+                end 
+            });
         }
-        // Limpa a legenda em streaming e a referência do turno
+        // Reset for the next turn
         setStreamingSubtitle(null);
         currentTurnTranscriptionRef.current = { text: '', speaker: null, start: 0 };
 
@@ -441,7 +454,9 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
   // Efeito 3: Gerencia a sessão de IA e o roteamento do grafo de áudio.
   useEffect(() => {
     const isAudioAiNeeded = isDubbingActive || isSubtitlesActive;
-    if (!audioContextRef.current || !gainNodeRef.current || !sourceNodeRef.current) return;
+    if (!audioContextRef.current || !gainNodeRef.current || !sourceNodeRef.current || !apiKey) {
+        return;
+    }
 
     const audioCtx = audioContextRef.current;
     const gainNode = gainNodeRef.current;
@@ -468,6 +483,7 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
         
         try {
             await geminiService.startTranslationSession(
+                apiKey,
                 handleMessage,
                 (e) => handleAiError("A conexão com a IA foi interrompida. As funções de tradução foram desativadas."),
                 (e) => console.log('Sessão Gemini fechada.'),
@@ -482,8 +498,14 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
             dubbingGainNodeRef.current.connect(outputAudioContextRef.current.destination);
             await outputAudioContextRef.current.resume();
 
-        } catch (err) { 
-            handleAiError("Não foi possível iniciar a sessão de IA. Verifique sua chave de API e a conexão.");
+        } catch (err: any) { 
+             const isAuthError = err.message?.includes('API key not valid');
+             handleAiError(
+                isAuthError 
+                ? "Sua chave de API do Gemini é inválida. Verifique-a nas configurações."
+                : "Não foi possível iniciar a sessão de IA. Verifique sua chave e a conexão.",
+                isAuthError
+             );
         }
     };
 
@@ -517,7 +539,7 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
     }
 
     return teardownAiConnection;
-  }, [isDubbingActive, isSubtitlesActive, targetLanguage, maleDubbingVoice, femaleDubbingVoice, handleMessage, handleAiError, currentProgram]);
+  }, [apiKey, isDubbingActive, isSubtitlesActive, targetLanguage, maleDubbingVoice, femaleDubbingVoice, handleMessage, handleAiError, currentProgram]);
 
   // Efeito 4: Gerencia o volume do vídeo original para dublagem e volume do usuário.
   useEffect(() => {
@@ -529,7 +551,7 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
     }
     if (dubbingGainNodeRef.current && outputAudioContextRef.current) {
         dubbingGainNodeRef.current.gain.linearRampToValueAtTime(
-            isDubbingActive ? 1 : 0,
+            isDubbingActive ? volume : 0, // Apply user volume to dubbing track
             outputAudioContextRef.current.currentTime + 0.2
         );
     }
@@ -584,6 +606,8 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
   }, []);
   
   const targetLanguageCode = SUPPORTED_LANGUAGES.find(l => l.name === targetLanguage)?.code ?? 'pt';
+  const areAiFeaturesDisabled = !apiKey;
+
 
   if (!channel) {
     return (
@@ -612,9 +636,10 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
 
       <OcrTranslateOverlay 
         videoRef={videoRef}
-        enabled={isOcrActive}
+        enabled={isOcrActive && !!apiKey}
         targetLanguageCode={targetLanguageCode}
         onNewSummary={setOcrSummary}
+        apiKey={apiKey}
       />
 
       <div className="absolute top-0 left-0 right-0 p-4 pointer-events-none flex flex-col items-center gap-2 transition-opacity duration-500 group-hover:opacity-100 opacity-0 focus-within:opacity-100">
@@ -668,6 +693,7 @@ const Player: React.FC<PlayerProps> = ({ channel, epgData, currentProgram, onPro
         onToggleSceneAnalysis={() => setIsSceneAnalysisActive(p => !p)}
         isOcrActive={isOcrActive}
         onToggleOcr={() => setIsOcrActive(p => !p)}
+        areAiFeaturesDisabled={areAiFeaturesDisabled}
         targetLanguage={targetLanguage}
         onLanguageChange={onLanguageChange}
         supportedLanguages={SUPPORTED_LANGUAGES}

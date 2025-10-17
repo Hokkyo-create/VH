@@ -1,179 +1,144 @@
-import { GoogleGenAI, LiveSession, LiveServerMessage, Modality, Blob } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
 import { encode } from '../utils/audio';
 
-let ai: GoogleGenAI | null = null;
-let activeSession: LiveSession | null = null;
+let sessionPromise: Promise<any> | null = null;
 
-function getAi(): GoogleGenAI {
-    if (!ai) {
-        ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-    }
-    return ai;
-}
-
-export const translateGenericText = async (text: string, targetLanguage: string, sourceLanguage: string = "Japonês"): Promise<string> => {
-    if (!text.trim()) {
-        return "";
-    }
-    try {
-        const genAI = getAi();
-        const response = await genAI.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: {
-                parts: [{
-                    text: `Aja como um tradutor especialista. Traduza o texto a seguir de ${sourceLanguage} para ${targetLanguage}. Responda APENAS com o texto traduzido, mantendo a formatação original o máximo possível.\n\nTexto para traduzir:\n"${text}"`
-                }]
-            },
-        });
-        return response.text.trim();
-    } catch (error) {
-        console.error(`Erro ao traduzir texto: ${text}`, error);
-        return `[Erro na Tradução]`;
-    }
-};
-
-export const analyzeScene = async (base64ImageData: string): Promise<string> => {
-    const genAI = getAi();
-    try {
-        const response = await genAI.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: {
-                parts: [
-                    {
-                        inlineData: {
-                            mimeType: 'image/jpeg',
-                            data: base64ImageData,
-                        },
-                    },
-                    {
-                        text: `Analise esta imagem de um stream de vídeo e descreva o que está acontecendo em uma frase curta e concisa. A cena é um comercial, uma paisagem, música ou uma cena sem falas? Resuma o contexto visual para um espectador. Responda em português do Brasil.`,
-                    },
-                ],
-            },
-        });
-        return response.text;
-    } catch (error) {
-        console.error("Error analyzing scene:", error);
-        // Return empty string on error to not disrupt UI
-        return "";
-    }
-};
-
+// FIX: Implement startTranslationSession to initialize and connect to the Gemini Live API.
 export const startTranslationSession = async (
+    apiKey: string,
     onMessage: (message: LiveServerMessage) => void,
-    onError: (error: ErrorEvent) => void,
-    onClose: (event: CloseEvent) => void,
+    onError: (e: ErrorEvent) => void,
+    onClose: (e: CloseEvent) => void,
     targetLanguage: string,
-    maleVoiceName: string,
-    femaleVoiceName: string,
-    programContext?: { title: string; description?: string }
-): Promise<LiveSession> => {
-    const genAI = getAi();
+    maleVoice: string,
+    femaleVoice: string,
+    context?: { title: string; description?: string }
+) => {
+    const ai = new GoogleGenAI({ apiKey });
     
-    // Ensure any existing session is closed before starting a new one.
-    await closeSession();
-    
-    let systemInstruction = `Você é um intérprete de IA de classe mundial para transmissões ao vivo. Sua tarefa é ouvir o áudio em japonês e fornecer dublagem e legendas em ${targetLanguage}. **SUA PRIORIDADE MÁXIMA É A VELOCIDADE E A BAIXÍSSIMA LATÊNCIA.**
+    const systemInstruction = `Você é um tradutor em tempo real e um dublador.
+Sua tarefa é transcrever o áudio japonês que você recebe, determinar se o locutor é homem ou mulher, traduzir a transcrição para ${targetLanguage} e, em seguida, gerar o áudio da tradução usando uma voz apropriada.
+- Se o locutor for homem, sua transcrição de saída deve começar com "HOMEM:" seguido pelo texto traduzido.
+- Se a locutora for mulher, sua transcrição de saída deve começar com "MULHER:" seguido pelo texto traduzido.
+- Se o gênero não puder ser determinado, não use um prefixo.
+- Responda apenas com a fala traduzida. Não adicione nenhuma outra palavra ou explicação.
+- Mantenha a tradução concisa e natural para dublagem.
+- O idioma de destino para 'Português' é sempre o Português do Brasil.
+${context?.title ? `\nContexto adicional do programa de TV: "${context.title}". ${context.description || ''}. Use isso para melhorar a precisão da tradução.` : ''}`;
 
-1.  **MODO INTÉRPRETE SIMULTÂNEO (CRÍTICO):** Comece a traduzir e falar IMEDIATAMENTE ao ouvir a fala. A latência é mais importante que a perfeição gramatical.
-
-2.  **DETECÇÃO DE GÊNERO E ETIQUETAGEM (FORMATO ESTRITO):** Para cada novo trecho de fala, identifique o gênero do locutor e prefixe a tradução com a etiqueta 'HOMEM:' ou 'MULHER:'. Sua resposta de texto deve conter APENAS a tradução etiquetada. A API usará esta etiqueta para selecionar a voz correta.
-    *   **Exemplo de Resposta:** \`HOMEM: O tempo está ótimo hoje, não é?\`
-    *   **Exemplo de Resposta:** \`MULHER: Sim, concordo plenamente! Um lindo céu azul.\`
-
-3.  **IDIOMA DE DESTINO:** Para 'Português', use **Português do Brasil**.`;
-
-
-    if (programContext?.title) {
-        systemInstruction += `\n\n4. **Contexto do Programa Atual:** Você está traduzindo um programa chamado "${programContext.title}".`;
-        if (programContext.description) {
-            systemInstruction += ` A descrição é: "${programContext.description}".`;
-        }
-        systemInstruction += ` Use este contexto para melhorar a precisão da sua tradução, especialmente para termos técnicos, nomes próprios ou jargões específicos do programa.`;
-    }
-
-    const session = await genAI.live.connect({
+    sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         callbacks: {
-            onopen: () => {
-                console.log('Gemini session opened');
-            },
+            onopen: () => console.log('Sessão Gemini aberta.'),
             onmessage: onMessage,
             onerror: onError,
-            onclose: (e) => {
-                // Ensure we only nullify the active session if it's the one that closed.
-                if (activeSession === session) {
-                    activeSession = null;
-                }
-                onClose(e);
-            },
+            onclose: onClose,
         },
         config: {
             responseModalities: [Modality.AUDIO],
-            outputAudioTranscription: {},
-            inputAudioTranscription: {},
-            systemInstruction: systemInstruction,
             speechConfig: {
                 multiSpeakerVoiceConfig: {
                     speakerVoiceConfigs: [
-                        {
-                            speaker: 'HOMEM',
-                            voiceConfig: {
-                                prebuiltVoiceConfig: { voiceName: maleVoiceName }
-                            }
-                        },
-                        {
-                            speaker: 'MULHER',
-                            voiceConfig: {
-                                prebuiltVoiceConfig: { voiceName: femaleVoiceName }
-                            }
-                        }
+                        { speaker: 'HOMEM', voiceConfig: { prebuiltVoiceConfig: { voiceName: maleVoice } } },
+                        { speaker: 'MULHER', voiceConfig: { prebuiltVoiceConfig: { voiceName: femaleVoice } } }
                     ]
                 }
             },
-        },
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+            systemInstruction: systemInstruction,
+        }
     });
-    
-    activeSession = session;
-    return session;
+
+    await sessionPromise;
 };
 
-export const sendAudio = (audioData: Float32Array): void => {
-    if (activeSession) {
-        const pcmBlob = createPcmBlob(audioData);
-        try {
-            activeSession.sendRealtimeInput({ media: pcmBlob });
-        } catch (e) {
-            console.error("Failed to send audio data, session might be closing.", e);
+// FIX: Implement sendAudio to encode and stream audio data to the active Gemini session.
+export const sendAudio = (audioData: Float32Array) => {
+    if (!sessionPromise) {
+        return;
+    }
+
+    const l = audioData.length;
+    const int16 = new Int16Array(l);
+    for (let i = 0; i < l; i++) {
+        int16[i] = audioData[i] * 32768;
+    }
+    const pcmBlob: Blob = {
+        data: encode(new Uint8Array(int16.buffer)),
+        mimeType: 'audio/pcm;rate=16000',
+    };
+
+    sessionPromise.then(session => {
+        if (session) {
+            session.sendRealtimeInput({ media: pcmBlob });
         }
+    });
+};
+
+// FIX: Implement closeSession to properly terminate the connection.
+export const closeSession = () => {
+    if (sessionPromise) {
+        sessionPromise.then(session => {
+            if (session) {
+                session.close();
+            }
+            sessionPromise = null;
+        });
     }
 };
 
-export const closeSession = async (): Promise<void> => {
-    if (activeSession) {
-        const sessionToClose = activeSession;
-        // Immediately nullify to prevent new data from being sent to the closing session.
-        activeSession = null;
-        try {
-            sessionToClose.close();
-            console.log('Gemini session closed via closeSession call.');
-        } catch (e) {
-            console.error("Error closing session:", e);
-        }
+// FIX: Re-implement analyzeScene using the Gemini API for multimodal analysis.
+export const analyzeScene = async (apiKey: string, base64ImageData: string): Promise<string> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey });
+        const textPart = {
+            text: "Analise esta imagem de um stream de vídeo e descreva o que está acontecendo em uma frase curta e concisa. A cena é um comercial, uma paisagem, música ou uma cena sem falas? Resuma o contexto visual para um espectador. Responda em português do Brasil."
+        };
+        const imagePart = {
+            inlineData: {
+                mimeType: 'image/jpeg',
+                data: base64ImageData,
+            },
+        };
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [imagePart, textPart] },
+            config: {
+                maxOutputTokens: 100,
+            }
+        });
+
+        return response.text.trim() || "";
+    } catch (error) {
+        console.error("Error analyzing scene with Gemini:", error);
+        return "";
     }
 };
 
-function createPcmBlob(data: Float32Array): Blob {
-  const l = data.length;
-  const int16 = new Int16Array(l);
-  for (let i = 0; i < l; i++) {
-    // Clamp the data to the [-1, 1] range before conversion.
-    const s = Math.max(-1, Math.min(1, data[i]));
-    // Convert to 16-bit signed integer.
-    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-  }
-  return {
-    data: encode(new Uint8Array(int16.buffer)),
-    mimeType: 'audio/pcm;rate=16000',
-  };
-}
+// FIX: Re-implement translateGenericText using the Gemini API.
+export const translateGenericText = async (apiKey: string, text: string, targetLanguage: string, sourceLanguage: string = "Japonês"): Promise<string> => {
+    if (!text.trim()) return "";
+    try {
+        const ai = new GoogleGenAI({ apiKey });
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [{ text: `Você é um tradutor. Traduza o texto a seguir de ${sourceLanguage} para ${targetLanguage}. Responda APENAS com o texto traduzido.\n\nTexto: "${text}"` }]
+            },
+            config: {
+                temperature: 0,
+            }
+        });
+
+        const translatedText = response.text.trim();
+        if (translatedText) return translatedText;
+        return `[Erro na Tradução]`;
+    } catch (error: any) {
+        console.error(`Erro ao traduzir texto: ${text}`, error);
+        if (error.message?.toLowerCase().includes('api key not valid')) return `[Erro: Chave Inválida]`;
+        if (error.message?.toLowerCase().includes('quota')) return `[Erro: Cota Excedida]`;
+        return `[Erro na Tradução]`;
+    }
+};
