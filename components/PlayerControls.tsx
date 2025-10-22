@@ -8,6 +8,7 @@ import PipIcon from './icons/PipIcon';
 import FullscreenIcon from './icons/FullscreenIcon';
 import PlayIcon from './icons/PlayIcon';
 import PauseIcon from './icons/PauseIcon';
+import SpeedIcon from './icons/SpeedIcon';
 
 interface PlayerControlsProps {
   isPlaying: boolean;
@@ -23,16 +24,15 @@ interface PlayerControlsProps {
   onToggleSceneAnalysis: () => void;
   isOcrActive: boolean;
   onToggleOcr: () => void;
+  isSpeedCorrectionActive: boolean;
+  onToggleSpeedCorrection: () => void;
   areAiFeaturesDisabled: boolean;
   targetLanguage: string;
   onLanguageChange: (lang: string) => void;
   supportedLanguages: { code: string; name: string }[];
-  maleDubbingVoice: string;
-  onMaleDubbingVoiceChange: (voice: string) => void;
-  supportedMaleVoices: { code: string; name: string }[];
-  femaleDubbingVoice: string;
-  onFemaleDubbingVoiceChange: (voice: string) => void;
-  supportedFemaleVoices: { code: string; name: string }[];
+  dubbingVoice: string;
+  onDubbingVoiceChange: (voice: string) => void;
+  supportedVoices: { code: string; name: string }[];
   volume: number;
   onVolumeChange: (volume: number) => void;
   onTogglePiP: () => void;
@@ -56,16 +56,15 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   onToggleSceneAnalysis,
   isOcrActive,
   onToggleOcr,
+  isSpeedCorrectionActive,
+  onToggleSpeedCorrection,
   areAiFeaturesDisabled,
   targetLanguage,
   onLanguageChange,
   supportedLanguages,
-  maleDubbingVoice,
-  onMaleDubbingVoiceChange,
-  supportedMaleVoices,
-  femaleDubbingVoice,
-  onFemaleDubbingVoiceChange,
-  supportedFemaleVoices,
+  dubbingVoice,
+  onDubbingVoiceChange,
+  supportedVoices,
   volume,
   onVolumeChange,
   onTogglePiP,
@@ -90,7 +89,6 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
     if (videoRef.current) {
         const buffer = videoRef.current.buffered;
         if (buffer.length > 0) {
-            // Seek to 5 seconds before the end of the buffer to ensure smooth transition
             const livePosition = buffer.end(buffer.length - 1) - 5;
             onSeek(livePosition);
         }
@@ -100,7 +98,6 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
 
   return (
     <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 via-black/50 to-transparent flex flex-col opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300">
-      {/* Progress Bar */}
       {isSeekable && (
          <div className="relative w-full flex items-center group/progress mb-2">
             <input
@@ -124,9 +121,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
         </div>
       )}
 
-      {/* Controls Row */}
       <div className="flex items-center justify-between gap-4">
-        {/* Left Controls */}
         <div className="flex items-center gap-3">
           <button
             onClick={onTogglePlay}
@@ -168,7 +163,6 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
           </div>
         </div>
 
-        {/* Right Controls */}
         <div className="flex items-center justify-end flex-wrap gap-x-1 md:gap-x-2">
             <select
             value={targetLanguage}
@@ -184,26 +178,13 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
             </select>
             <div className="flex gap-x-1">
                 <select
-                    value={maleDubbingVoice}
-                    onChange={(e) => onMaleDubbingVoiceChange(e.target.value)}
+                    value={dubbingVoice}
+                    onChange={(e) => onDubbingVoiceChange(e.target.value)}
                     className="bg-gray-800/80 text-white border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer text-xs sm:text-sm hover:bg-gray-700/80 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Voz de IA a ser usada para locutores masculinos"
+                    title="Voz de IA para dublagem"
                     disabled={areAiFeaturesDisabled}
                 >
-                    {supportedMaleVoices.map((voice) => (
-                        <option key={voice.code} value={voice.code} className="bg-gray-800">
-                        {voice.name}
-                        </option>
-                    ))}
-                </select>
-                <select
-                    value={femaleDubbingVoice}
-                    onChange={(e) => onFemaleDubbingVoiceChange(e.target.value)}
-                    className="bg-gray-800/80 text-white border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer text-xs sm:text-sm hover:bg-gray-700/80 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Voz de IA a ser usada para locutoras femininas"
-                    disabled={areAiFeaturesDisabled}
-                >
-                    {supportedFemaleVoices.map((voice) => (
+                    {supportedVoices.map((voice) => (
                         <option key={voice.code} value={voice.code} className="bg-gray-800">
                         {voice.name}
                         </option>
@@ -242,6 +223,14 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
               disabled={areAiFeaturesDisabled}
             >
               <DubbingIcon active={isDubbingActive} />
+            </button>
+            <button
+              onClick={onToggleSpeedCorrection}
+              title={areAiFeaturesDisabled ? 'Adicione uma chave de API para ativar a Correção de Velocidade' : (isSpeedCorrectionActive ? 'Desativar Correção de Velocidade' : 'Ativar Correção de Velocidade')}
+              className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={areAiFeaturesDisabled || !isDubbingActive}
+            >
+              <SpeedIcon active={isSpeedCorrectionActive} />
             </button>
             <div className="h-6 w-px bg-gray-600 mx-1"></div>
             <button

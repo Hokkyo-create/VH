@@ -10,17 +10,13 @@ export const startTranslationSession = async (
     onError: (e: ErrorEvent) => void,
     onClose: (e: CloseEvent) => void,
     targetLanguage: string,
-    maleVoice: string,
-    femaleVoice: string,
+    dubbingVoice: string,
     context?: { title: string; description?: string }
 ) => {
     const ai = new GoogleGenAI({ apiKey });
     
-    const systemInstruction = `Você é um tradutor em tempo real e um dublador.
-Sua tarefa é transcrever o áudio japonês que você recebe, determinar se o locutor é homem ou mulher, traduzir a transcrição para ${targetLanguage} e, em seguida, gerar o áudio da tradução usando uma voz apropriada.
-- Se o locutor for homem, sua transcrição de saída deve começar com "HOMEM:" seguido pelo texto traduzido.
-- Se a locutora for mulher, sua transcrição de saída deve começar com "MULHER:" seguido pelo texto traduzido.
-- Se o gênero não puder ser determinado, não use um prefixo.
+    const systemInstruction = `Você é um tradutor e dublador em tempo real.
+Sua tarefa é transcrever o áudio em japonês que você recebe, traduzir a transcrição para ${targetLanguage} e, em seguida, gerar o áudio da tradução.
 - Responda apenas com a fala traduzida. Não adicione nenhuma outra palavra ou explicação.
 - Mantenha a tradução concisa e natural para dublagem.
 - O idioma de destino para 'Português' é sempre o Português do Brasil.
@@ -37,12 +33,7 @@ ${context?.title ? `\nContexto adicional do programa de TV: "${context.title}". 
         config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
-                multiSpeakerVoiceConfig: {
-                    speakerVoiceConfigs: [
-                        { speaker: 'HOMEM', voiceConfig: { prebuiltVoiceConfig: { voiceName: maleVoice } } },
-                        { speaker: 'MULHER', voiceConfig: { prebuiltVoiceConfig: { voiceName: femaleVoice } } }
-                    ]
-                }
+                voiceConfig: { prebuiltVoiceConfig: { voiceName: dubbingVoice } }
             },
             inputAudioTranscription: {},
             outputAudioTranscription: {},

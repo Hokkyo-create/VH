@@ -29,11 +29,19 @@ const ProgramInfo: React.FC<ProgramInfoProps> = ({ channel, program, targetLangu
                 ]);
 
                 if (!isCancelled) {
-                    if (title.startsWith('[Erro:') || desc.startsWith('[Erro:')) {
-                        setTranslationError(title.includes('Cota') || desc.includes('Cota') 
-                            ? "Cota da API excedida." 
-                            : "Chave de API inválida."
-                        );
+                    let errorMsg: string | null = null;
+                    const combinedResult = `${title} ${desc}`;
+                    
+                    if (combinedResult.includes('Cota Excedida')) {
+                        errorMsg = "Cota da API excedida.";
+                    } else if (combinedResult.includes('Chave Inválida')) {
+                        errorMsg = "Chave de API inválida.";
+                    } else if (title.startsWith('[Erro:') || desc.startsWith('[Erro:')) {
+                        errorMsg = "Erro na tradução.";
+                    }
+
+                    if (errorMsg) {
+                        setTranslationError(errorMsg);
                         setTranslatedProgram({ title: program.title, desc: program.desc || '' });
                     } else {
                         setTranslatedProgram({ title, desc });

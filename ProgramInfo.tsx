@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Channel, Programme } from '../types';
-import * as geminiService from '../services/geminiService';
+import * as aiService from '../services/geminiService';
 import SpinnerIcon from './icons/SpinnerIcon';
 
 interface ProgramInfoProps {
@@ -13,6 +13,7 @@ interface ProgramInfoProps {
 const ProgramInfo: React.FC<ProgramInfoProps> = ({ channel, program, targetLanguage, apiKey }) => {
   const [translatedProgram, setTranslatedProgram] = useState<{ title: string; desc: string } | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
 
   useEffect(() => {
     if (program && targetLanguage !== 'Japonês' && apiKey) {
@@ -20,19 +21,36 @@ const ProgramInfo: React.FC<ProgramInfoProps> = ({ channel, program, targetLangu
         const translate = async () => {
             setIsTranslating(true);
             setTranslatedProgram(null);
+            setTranslationError(null);
             try {
-                const [translatedTitle, translatedDesc] = await Promise.all([
-                    geminiService.translateGenericText(apiKey, program.title, targetLanguage),
-                    geminiService.translateGenericText(apiKey, program.desc || '', targetLanguage)
+                const [title, desc] = await Promise.all([
+                    aiService.translateGenericText(apiKey, program.title, targetLanguage),
+                    aiService.translateGenericText(apiKey, program.desc || '', targetLanguage)
                 ]);
 
                 if (!isCancelled) {
-                    setTranslatedProgram({ title: translatedTitle, desc: translatedDesc });
+                    let errorMsg: string | null = null;
+                    const combinedResult = `${title} ${desc}`;
+                    
+                    if (combinedResult.includes('Cota Excedida')) {
+                        errorMsg = "Cota da API excedida.";
+                    } else if (combinedResult.includes('Chave Inválida')) {
+                        errorMsg = "Chave de API inválida.";
+                    } else if (title.startsWith('[Erro:') || desc.startsWith('[Erro:')) {
+                        errorMsg = "Erro na tradução.";
+                    }
+
+                    if (errorMsg) {
+                        setTranslationError(errorMsg);
+                        setTranslatedProgram({ title: program.title, desc: program.desc || '' });
+                    } else {
+                        setTranslatedProgram({ title, desc });
+                    }
                 }
             } catch (e) {
                 console.error("Falha ao traduzir as informações do programa", e);
                 if (!isCancelled) {
-                    setTranslatedProgram({ title: "[Erro na Tradução]", desc: "" });
+                    setTranslationError("Erro na tradução.");
                 }
             } finally {
                 if (!isCancelled) {
@@ -48,6 +66,7 @@ const ProgramInfo: React.FC<ProgramInfoProps> = ({ channel, program, targetLangu
     } else {
         setTranslatedProgram(null);
         setIsTranslating(false);
+        setTranslationError(null);
     }
   }, [program, targetLanguage, apiKey]);
 
@@ -84,6 +103,7 @@ const ProgramInfo: React.FC<ProgramInfoProps> = ({ channel, program, targetLangu
                     <h3 className="text-lg font-bold text-teal-400 truncate" title={displayTitle}>{displayTitle}</h3>
                     {isTranslating && <SpinnerIcon />}
                 </div>
+                {translationError && <p className="text-xs text-red-400">{translationError}</p>}
                 <p className="text-sm text-gray-400 mb-2">
                     {formatTime(program.start)} - {formatTime(program.stop)}
                 </p>

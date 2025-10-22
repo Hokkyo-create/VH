@@ -22,7 +22,7 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
   const intervalRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const clearResultTimeoutRef = useRef<number | null>(null);
-
+  
   const analyzeFrameAndTranslate = useCallback(async () => {
     if (isProcessing || !videoRef.current || !apiKey) return;
     setIsProcessing(true);
@@ -56,7 +56,6 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
       
       const results = await ocrAndTranslateImageLocal(apiKey, canvas, targetLanguageCode);
 
-      // Always clear the previous timeout
       if (clearResultTimeoutRef.current) {
         clearTimeout(clearResultTimeoutRef.current);
       }
@@ -65,14 +64,12 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
         setTransBlocks(results.translatedBlocks);
         onNewSummary(results.summary);
         
-        // Set a new timeout to clear everything
         clearResultTimeoutRef.current = window.setTimeout(() => {
           setTransBlocks([]);
           onNewSummary('');
           clearResultTimeoutRef.current = null;
-        }, 8000); // Keep results for 8 seconds
+        }, 8000);
       } else {
-        // If no results, clear immediately
         setTransBlocks([]);
         onNewSummary('');
       }
@@ -86,10 +83,10 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
   }, [isProcessing, videoRef, targetLanguageCode, onNewSummary, apiKey]);
 
   useEffect(() => {
-    if (enabled) {
+    if (enabled && apiKey) {
       setTransBlocks([]);
       onNewSummary('');
-      intervalRef.current = window.setInterval(analyzeFrameAndTranslate, 3500); // Scan every 3.5 seconds
+      intervalRef.current = window.setInterval(analyzeFrameAndTranslate, 3500);
     } else {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (clearResultTimeoutRef.current) clearTimeout(clearResultTimeoutRef.current);
@@ -97,14 +94,14 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
       clearResultTimeoutRef.current = null;
       setTransBlocks([]);
       onNewSummary('');
-      terminateOcrWorker(); // Terminate worker when OCR is disabled
+      terminateOcrWorker();
     }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (clearResultTimeoutRef.current) clearTimeout(clearResultTimeoutRef.current);
-      terminateOcrWorker(); // Ensure worker is terminated on component unmount
+      terminateOcrWorker();
     };
-  }, [enabled, analyzeFrameAndTranslate, onNewSummary]);
+  }, [enabled, analyzeFrameAndTranslate, onNewSummary, apiKey]);
 
   if (!enabled || transBlocks.length === 0) {
     return null;
@@ -115,7 +112,7 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
       {transBlocks.map((block) => (
         <div
           key={block.id}
-          className="absolute flex items-center justify-center p-1" // Align content to center
+          className="absolute flex items-center justify-center p-1"
           style={{
             left: `${block.bbox.x * 100}%`,
             top: `${block.bbox.y * 100}%`,
@@ -127,10 +124,9 @@ const OcrTranslateOverlay: React.FC<OcrTranslateOverlayProps> = ({
           <span
             className="text-center"
             style={{
-              color: '#FFFFE0', // Light yellow, great for subtitles
+              color: '#FFFFE0',
               fontSize: `clamp(10px, ${block.bbox.height * 100 * 0.7}vh, 28px)`,
               lineHeight: 1.2,
-              // Create a solid outline effect for maximum readability without a background
               textShadow: '1px 1px 2px black, -1px -1px 2px black, 1px -1px 2px black, -1px 1px 2px black, 0 0 5px black',
             }}
           >

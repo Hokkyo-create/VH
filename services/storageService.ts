@@ -6,9 +6,9 @@ export interface AppSettings {
   isSubtitlesActive?: boolean;
   isSceneAnalysisActive?: boolean;
   isOcrActive?: boolean;
-  maleDubbingVoice?: string;
-  femaleDubbingVoice?: string;
+  dubbingVoice?: string;
   apiKey?: string;
+  isSpeedCorrectionActive?: boolean;
 }
 
 const SETTINGS_KEY = 'ai_iptv_player_settings_v1';
