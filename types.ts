@@ -35,3 +35,12 @@ export interface DubbingSegment {
   end: number;
   buffer: AudioBuffer;
 }
+
+export interface Station {
+  name: string;
+  url: string;
+  country: string;
+  lat: number;
+  lng: number;
+  favicon?: string;
+}

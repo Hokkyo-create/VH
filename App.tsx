@@ -9,6 +9,9 @@ import Player from './components/Player';
 import ProgramInfo from './components/ProgramInfo';
 import SettingsModal from './components/SettingsModal';
 import SettingsIcon from './components/icons/SettingsIcon';
+import KiwiSdrView from './components/KiwiSdrView';
+import TvIcon from './components/icons/TvIcon';
+import RadioIcon from './components/icons/RadioIcon';
 
 // The comprehensive M3U playlist provided by the user.
 const PRELOADED_SAMPLE_M3U = `#EXTM3U url-tvg="https://epg.freejptv.com/jp.xml,https://animenosekai.github.io/japanterebi-xmltv/guide.xml" tvg-shift=0 m3uautoload=1
@@ -313,7 +316,6 @@ https://proxy.utako.moe/ph.php?&isp=1&id=cs15
 https://proxy.utako.moe/ph.php?&isp=1&id=cs11
 `;
 
-
 const App: React.FC = () => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
@@ -327,6 +329,7 @@ const App: React.FC = () => {
   const [targetLanguage, setTargetLanguage] = useState(
     () => loadSettings().language ?? 'Português (Brasil)'
   );
+  const [activeView, setActiveView] = useState<'iptv' | 'sdr'>('iptv');
 
   useEffect(() => {
     saveSettings({ language: targetLanguage });
@@ -401,13 +404,15 @@ const App: React.FC = () => {
   }, [processM3UContent]);
   
   useEffect(() => {
-    const settings = loadSettings();
-    if (settings.m3uUrl) {
-      handleUrlSubmit(settings.m3uUrl);
-    } else {
-      processM3UContent(PRELOADED_SAMPLE_M3U);
+    if (activeView === 'iptv') {
+      const settings = loadSettings();
+      if (settings.m3uUrl) {
+        handleUrlSubmit(settings.m3uUrl);
+      } else {
+        processM3UContent(PRELOADED_SAMPLE_M3U);
+      }
     }
-  }, [handleUrlSubmit, processM3UContent]);
+  }, [handleUrlSubmit, processM3UContent, activeView]);
 
 
   const handleFileContent = (content: string) => {
@@ -427,15 +432,81 @@ const App: React.FC = () => {
     setCurrentProgram(null);
   }, []);
 
+  const renderIptvView = () => (
+    <>
+      <UrlInput 
+          onSubmit={handleUrlSubmit} 
+          onFileContent={handleFileContent} 
+          isLoading={isLoading}
+          m3uUrl={m3uUrl}
+          onUrlChange={setM3uUrl}
+          onClear={handleClearUrl}
+      />
+      {error && <p className="text-red-400 text-center mt-4 bg-red-900/50 p-3 rounded-md">{error}</p>}
+      
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-8 xl:col-span-9 flex flex-col gap-6">
+          <Player 
+            channel={selectedChannel} 
+            apiKey={apiKey}
+            onInvalidApiKey={() => setIsSettingsModalOpen(true)}
+            epgData={epgData}
+            currentProgram={currentProgram}
+            onProgramChange={setCurrentProgram}
+            targetLanguage={targetLanguage}
+            onLanguageChange={setTargetLanguage}
+          />
+          <ProgramInfo 
+            channel={selectedChannel} 
+            program={currentProgram}
+            targetLanguage={targetLanguage}
+            apiKey={apiKey}
+          />
+        </div>
+        <div className="lg:col-span-4 xl:col-span-3">
+          <ChannelList channels={channels} onSelectChannel={handleSelectChannel} selectedChannelUrl={selectedChannel?.url} />
+        </div>
+      </div>
+    </>
+  );
+
+  const renderSdrView = () => (
+    <KiwiSdrView 
+      apiKey={apiKey}
+      onInvalidApiKey={() => setIsSettingsModalOpen(true)}
+      targetLanguage={targetLanguage}
+      onLanguageChange={setTargetLanguage}
+    />
+  );
+
+  const ViewButton = ({ view, label, icon }: { view: 'iptv' | 'sdr', label: string, icon: React.ReactNode }) => (
+    <button
+      onClick={() => setActiveView(view)}
+      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+        activeView === view
+          ? 'bg-teal-500/20 text-teal-300'
+          : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 font-sans flex flex-col">
       <header className="bg-gray-800/50 backdrop-blur-sm shadow-lg p-4 sticky top-0 z-20">
         <div className="container mx-auto flex items-center justify-between">
-          <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-blue-500">
-            Player de IPTV com IA
-          </h1>
           <div className="flex items-center gap-4">
-            {/* FIX: Updated text to refer to Gemini instead of OpenAI. */}
+            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-blue-500">
+              Player com IA
+            </h1>
+            <div className="hidden sm:flex items-center gap-2 bg-gray-700/30 p-1 rounded-lg">
+              <ViewButton view="iptv" label="IPTV" icon={<TvIcon />} />
+              <ViewButton view="sdr" label="Rádio IA" icon={<RadioIcon />} />
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
             <p className="text-sm text-gray-400 hidden sm:block">Dublagem e Legendas com IA do Gemini</p>
             <button
                 onClick={() => setIsSettingsModalOpen(true)}
@@ -446,13 +517,16 @@ const App: React.FC = () => {
             </button>
           </div>
         </div>
+         <div className="sm:hidden container mx-auto flex items-center justify-center mt-3 bg-gray-700/30 p-1 rounded-lg">
+            <ViewButton view="iptv" label="IPTV" icon={<TvIcon />} />
+            <ViewButton view="sdr" label="Rádio IA" icon={<RadioIcon />} />
+        </div>
       </header>
 
-      <main className="container mx-auto p-4 flex-grow">
+      <main className="container mx-auto p-4 flex-grow flex flex-col">
         {!apiKey && (
             <div className="bg-yellow-900/50 border border-yellow-700 text-yellow-200 px-4 py-3 rounded-lg relative mb-4 text-center" role="alert">
                 <strong className="font-bold">Ação necessária:</strong>
-                {/* FIX: Updated text to refer to Gemini instead of OpenAI. */}
                 <span className="block sm:inline ml-2">As funções de IA estão desativadas. Por favor, 
                     <button onClick={() => setIsSettingsModalOpen(true)} className="font-bold underline hover:text-yellow-100 mx-1">
                         adicione sua chave de API do Gemini
@@ -460,42 +534,11 @@ const App: React.FC = () => {
                 para continuar.</span>
             </div>
         )}
-        <UrlInput 
-            onSubmit={handleUrlSubmit} 
-            onFileContent={handleFileContent} 
-            isLoading={isLoading}
-            m3uUrl={m3uUrl}
-            onUrlChange={setM3uUrl}
-            onClear={handleClearUrl}
-        />
-        {error && <p className="text-red-400 text-center mt-4 bg-red-900/50 p-3 rounded-md">{error}</p>}
         
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-8 xl:col-span-9 flex flex-col gap-6">
-            <Player 
-              channel={selectedChannel} 
-              apiKey={apiKey}
-              onInvalidApiKey={() => setIsSettingsModalOpen(true)}
-              epgData={epgData}
-              currentProgram={currentProgram}
-              onProgramChange={setCurrentProgram}
-              targetLanguage={targetLanguage}
-              onLanguageChange={setTargetLanguage}
-            />
-            <ProgramInfo 
-              channel={selectedChannel} 
-              program={currentProgram}
-              targetLanguage={targetLanguage}
-              apiKey={apiKey}
-            />
-          </div>
-          <div className="lg:col-span-4 xl:col-span-3">
-            <ChannelList channels={channels} onSelectChannel={handleSelectChannel} selectedChannelUrl={selectedChannel?.url} />
-          </div>
-        </div>
+        {activeView === 'iptv' ? renderIptvView() : renderSdrView()}
+
       </main>
       <footer className="bg-gray-800 text-center p-4 text-sm text-gray-500 mt-8">
-        {/* FIX: Updated text to refer to Gemini instead of OpenAI. */}
         <p>&copy; {new Date().getFullYear()} Player de IPTV com IA. Desenvolvido com a API do Gemini.</p>
       </footer>
       <SettingsModal

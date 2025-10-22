@@ -157,7 +157,11 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
             await audioContextRef.current.resume();
         }
         if (video.paused) { await video.play(); } else { video.pause(); }
-    } catch (e) { console.error("Ação de Play/Pause falhou", e); }
+    } catch (e) { 
+      if (e instanceof Error && e.name !== 'AbortError') {
+        console.error("Ação de Play/Pause falhou", e);
+      }
+    }
   }, []);
 
   const stopHistoricalDubbing = useCallback(() => {
@@ -242,9 +246,21 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
         const buffer = videoRef.current.buffered;
         if (buffer?.length > 0) {
             const liveEdge = buffer.end(buffer.length - 1);
-            // Adiciona histerese para evitar oscilações constantes de estado
-            const atLive = isAtLiveEdge ? (liveEdge - now) < 20 : (liveEdge - now) < 10;
-            if (atLive !== isAtLiveEdge) setIsAtLiveEdge(atLive);
+            const timeFromLive = liveEdge - now;
+
+            // Lógica de histerese para evitar oscilações rápidas no estado ao vivo
+            const liveThreshold = 15; // Deve estar a esta distância para ser considerado "não ao vivo"
+            const returnToLiveThreshold = 5; // Deve estar a esta proximidade para ser considerado "ao vivo" novamente
+
+            setIsAtLiveEdge(prevAtLiveEdge => {
+              if (prevAtLiveEdge && timeFromLive > liveThreshold) {
+                  return false; // Ficou para trás
+              }
+              if (!prevAtLiveEdge && timeFromLive < returnToLiveThreshold) {
+                  return true; // Alcançou
+              }
+              return prevAtLiveEdge;
+            });
         }
         
         const subHistory = subtitleHistoryRef.current;
@@ -354,18 +370,20 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
       const now = videoRef.current?.currentTime ?? 0;
       const turnRef = currentTurnTranscriptionRef;
 
-      if (turnRef.current.text === '') {
-        turnRef.current.start = now;
-        // Detecta o locutor apenas no início de um novo turno
-        if (textChunk.startsWith('[M]:')) {
-            turnRef.current.speaker = 'Homem';
-            textChunk = textChunk.substring(4);
-        } else if (textChunk.startsWith('[F]:')) {
-            turnRef.current.speaker = 'Mulher';
-            textChunk = textChunk.substring(4);
-        } else {
-            turnRef.current.speaker = null;
-        }
+      // Se este for o início de um novo turno (sem texto ainda)
+      if (turnRef.current.text === '' && textChunk.trim()) {
+          turnRef.current.start = now;
+          // Verifica o prefixo do locutor
+          const trimmedChunk = textChunk.trim();
+          if (trimmedChunk.startsWith('[M]:')) {
+              turnRef.current.speaker = 'Homem';
+              textChunk = trimmedChunk.substring(4).trim();
+          } else if (trimmedChunk.startsWith('[F]:')) {
+              turnRef.current.speaker = 'Mulher';
+              textChunk = trimmedChunk.substring(4).trim();
+          } else {
+              textChunk = trimmedChunk;
+          }
       }
       
       const processedChunk = textChunk.trim();
@@ -483,7 +501,7 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
 
   useEffect(() => {
     if (gainNodeRef.current && audioContextRef.current) {
-      gainNodeRef.current.gain.linearRampToValueAtTime(isDubbingActive ? 0.2 * volume : volume, audioContextRef.current.currentTime + 0.2);
+      gainNodeRef.current.gain.linearRampToValueAtTime(isDubbingActive ? 0.4 * volume : volume, audioContextRef.current.currentTime + 0.2);
     }
     if (dubbingGainNodeRef.current && outputAudioContextRef.current) {
         dubbingGainNodeRef.current.gain.linearRampToValueAtTime(isDubbingActive ? volume : 0, outputAudioContextRef.current.currentTime + 0.2);

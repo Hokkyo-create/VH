@@ -1,3 +1,5 @@
+import { EpgData } from '../types';
+
 export interface AppSettings {
   m3uUrl?: string;
   volume?: number;

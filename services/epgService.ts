@@ -1,6 +1,15 @@
 import { EpgData, Programme } from "../types";
 
 const CORS_PROXY_URL = 'https://corsproxy.io/?';
+const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hora de cache
+
+// Cache em memória para os dados do EPG
+let epgCache: {
+  data: EpgData;
+  timestamp: number;
+  epgUrls: string[];
+} | null = null;
+
 
 // Mapeia IDs de M3U para IDs de EPG quando eles não correspondem.
 // A chave é o tvg-id do M3U, o valor é uma lista de possíveis IDs no arquivo XMLTV.
@@ -48,6 +57,18 @@ const parseXmlTvDate = (dateString: string): Date => {
 
 
 export const fetchAndParseEPG = async (urls: string[]): Promise<EpgData> => {
+    // Verifica o cache em memória primeiro
+    if (epgCache) {
+        const isCacheValid = (Date.now() - epgCache.timestamp) < CACHE_DURATION_MS;
+        const areUrlsSame = JSON.stringify(urls.sort()) === JSON.stringify(epgCache.epgUrls.sort());
+        
+        if (isCacheValid && areUrlsSame) {
+            console.log("Carregando dados do EPG do cache em memória.");
+            return epgCache.data;
+        }
+    }
+    
+    console.log("Buscando novos dados do EPG da rede.");
     const epgData: EpgData = {};
 
     const fetchPromises = urls.map(async (url) => {
@@ -114,6 +135,14 @@ export const fetchAndParseEPG = async (urls: string[]): Promise<EpgData> => {
     for (const channelId in epgData) {
         epgData[channelId].sort((a, b) => a.start.getTime() - b.start.getTime());
     }
+    
+    // Salva no cache em memória após buscar e analisar com sucesso
+    epgCache = {
+        data: epgData,
+        timestamp: Date.now(),
+        epgUrls: urls,
+    };
+    console.log("Dados do EPG salvos em cache em memória.");
 
     return epgData;
 };

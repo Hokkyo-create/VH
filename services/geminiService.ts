@@ -116,7 +116,7 @@ export const translateGenericText = async (apiKey: string, text: string, targetL
     try {
         const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
-            model: 'gemini-2.se-flash',
+            model: 'gemini-2.5-flash',
             contents: {
                 parts: [{ text: `Você é um tradutor. Traduza o texto a seguir de ${sourceLanguage} para ${targetLanguage}. Responda APENAS com o texto traduzido.\n\nTexto: "${text}"` }]
             },
