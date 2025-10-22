@@ -11,6 +11,7 @@ export interface AppSettings {
   dubbingVoice?: string;
   apiKey?: string;
   isSpeedCorrectionActive?: boolean;
+  introSeen?: boolean;
 }
 
 const SETTINGS_KEY = 'ai_iptv_player_settings_v1';

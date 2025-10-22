@@ -12,6 +12,7 @@ import SettingsIcon from './components/icons/SettingsIcon';
 import KiwiSdrView from './components/KiwiSdrView';
 import TvIcon from './components/icons/TvIcon';
 import RadioIcon from './components/icons/RadioIcon';
+import IntroAnimation from './components/IntroAnimation';
 
 // The comprehensive M3U playlist provided by the user.
 const PRELOADED_SAMPLE_M3U = `#EXTM3U url-tvg="https://epg.freejptv.com/jp.xml,https://animenosekai.github.io/japanterebi-xmltv/guide.xml" tvg-shift=0 m3uautoload=1
@@ -330,16 +331,25 @@ const App: React.FC = () => {
     () => loadSettings().language ?? 'Português (Brasil)'
   );
   const [activeView, setActiveView] = useState<'iptv' | 'sdr'>('iptv');
+  const [introSeen, setIntroSeen] = useState(() => loadSettings().introSeen ?? false);
+
+  const handleIntroEnd = useCallback(() => {
+    setIntroSeen(true);
+    saveSettings({ introSeen: true });
+  }, []);
 
   useEffect(() => {
     saveSettings({ language: targetLanguage });
   }, [targetLanguage]);
 
   useEffect(() => {
-    if (!apiKey) {
-      setIsSettingsModalOpen(true);
+    if (!apiKey && !introSeen) {
+      // Delay opening settings modal if intro is playing
+      setTimeout(() => {
+        setIsSettingsModalOpen(true);
+      }, 500);
     }
-  }, [apiKey]);
+  }, [apiKey, introSeen]);
 
   const handleSaveApiKey = (newApiKey: string) => {
     setApiKey(newApiKey);
@@ -492,6 +502,10 @@ const App: React.FC = () => {
       {label}
     </button>
   );
+
+  if (!introSeen) {
+    return <IntroAnimation onEnd={handleIntroEnd} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 font-sans flex flex-col">

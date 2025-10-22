@@ -370,10 +370,9 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
       const now = videoRef.current?.currentTime ?? 0;
       const turnRef = currentTurnTranscriptionRef;
 
-      // Se este for o início de um novo turno (sem texto ainda)
+      // Se este for o início de um novo turno (sem texto ainda), detecte o locutor
       if (turnRef.current.text === '' && textChunk.trim()) {
           turnRef.current.start = now;
-          // Verifica o prefixo do locutor
           const trimmedChunk = textChunk.trim();
           if (trimmedChunk.startsWith('[M]:')) {
               turnRef.current.speaker = 'Homem';
@@ -382,13 +381,15 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
               turnRef.current.speaker = 'Mulher';
               textChunk = trimmedChunk.substring(4).trim();
           } else {
+              turnRef.current.speaker = null; // Padrão se não houver prefixo
               textChunk = trimmedChunk;
           }
+      } else {
+         textChunk = textChunk.trim(); // Limpa pedaços subsequentes
       }
       
-      const processedChunk = textChunk.trim();
-      if (processedChunk) {
-        turnRef.current.text += (turnRef.current.text ? ' ' : '') + processedChunk;
+      if (textChunk) {
+        turnRef.current.text += (turnRef.current.text ? ' ' : '') + textChunk;
       }
       
       if (turnRef.current.text) {
