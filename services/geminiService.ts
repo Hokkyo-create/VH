@@ -17,7 +17,9 @@ export const startTranslationSession = async (
     
     const systemInstruction = `Você é um tradutor e dublador em tempo real.
 Sua tarefa é transcrever o áudio em japonês que você recebe, traduzir a transcrição para ${targetLanguage} e, em seguida, gerar o áudio da tradução.
-- Responda apenas com a fala traduzida. Não adicione nenhuma outra palavra ou explicação.
+- Analise o tom e a frequência da voz original para determinar se o orador é homem ou mulher. Inicie CADA transcrição traduzida com "[M]: " para homem ou "[F]: " para mulher.
+- Tente ao máximo corresponder ao ritmo, entonação e tom emocional do orador original para uma dublagem mais natural. Se a fala for cantada, tente manter uma cadência melódica na tradução.
+- Responda apenas com o prefixo de gênero e a fala traduzida (por exemplo, "[M]: Olá a todos."). Não adicione nenhuma outra palavra ou explicação.
 - Mantenha a tradução concisa e natural para dublagem.
 - O idioma de destino para 'Português' é sempre o Português do Brasil.
 ${context?.title ? `\nContexto adicional do programa de TV: "${context.title}". ${context.description || ''}. Use isso para melhorar a precisão da tradução.` : ''}`;
@@ -114,7 +116,7 @@ export const translateGenericText = async (apiKey: string, text: string, targetL
     try {
         const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.se-flash',
             contents: {
                 parts: [{ text: `Você é um tradutor. Traduza o texto a seguir de ${sourceLanguage} para ${targetLanguage}. Responda APENAS com o texto traduzido.\n\nTexto: "${text}"` }]
             },

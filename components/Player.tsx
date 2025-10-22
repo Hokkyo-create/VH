@@ -241,9 +241,9 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
 
         const buffer = videoRef.current.buffered;
         if (buffer?.length > 0) {
-            const liveThreshold = 15;
             const liveEdge = buffer.end(buffer.length - 1);
-            const atLive = (liveEdge - now) < liveThreshold;
+            // Adiciona histerese para evitar oscilações constantes de estado
+            const atLive = isAtLiveEdge ? (liveEdge - now) < 20 : (liveEdge - now) < 10;
             if (atLive !== isAtLiveEdge) setIsAtLiveEdge(atLive);
         }
         
@@ -350,22 +350,43 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
     }
 
     if (isSubtitlesActive && message.serverContent?.outputTranscription) {
-      const textChunk = message.serverContent.outputTranscription.text;
+      let textChunk = message.serverContent.outputTranscription.text;
       const now = videoRef.current?.currentTime ?? 0;
       const turnRef = currentTurnTranscriptionRef;
-      if (turnRef.current.text === '') turnRef.current.start = now;
-      turnRef.current.speaker = null;
+
+      if (turnRef.current.text === '') {
+        turnRef.current.start = now;
+        // Detecta o locutor apenas no início de um novo turno
+        if (textChunk.startsWith('[M]:')) {
+            turnRef.current.speaker = 'Homem';
+            textChunk = textChunk.substring(4);
+        } else if (textChunk.startsWith('[F]:')) {
+            turnRef.current.speaker = 'Mulher';
+            textChunk = textChunk.substring(4);
+        } else {
+            turnRef.current.speaker = null;
+        }
+      }
+      
       const processedChunk = textChunk.trim();
-      if (processedChunk) turnRef.current.text += (turnRef.current.text ? ' ' : '') + processedChunk;
-      if (turnRef.current.text) setStreamingSubtitle({ text: turnRef.current.text, speaker: turnRef.current.speaker, start: turnRef.current.start, end: now + 2 });
+      if (processedChunk) {
+        turnRef.current.text += (turnRef.current.text ? ' ' : '') + processedChunk;
+      }
+      
+      if (turnRef.current.text) {
+        setStreamingSubtitle({ text: turnRef.current.text, speaker: turnRef.current.speaker, start: turnRef.current.start, end: now + 2 });
+      }
     }
     
     if (message.serverContent?.turnComplete) {
         const turn = currentTurnTranscriptionRef.current;
         const end = videoRef.current?.currentTime ?? 0;
-        if (turn.text && end > turn.start) subtitleHistoryRef.current.push({ text: turn.text.trim(), speaker: turn.speaker, start: turn.start, end });
+        if (turn.text && end > turn.start) {
+            subtitleHistoryRef.current.push({ text: turn.text.trim(), speaker: turn.speaker, start: turn.start, end });
+        }
         setStreamingSubtitle(null);
         currentTurnTranscriptionRef.current = { text: '', speaker: null, start: 0 };
+
         if(isSceneAnalysisActive) {
             if(sceneAnalysisTimeoutRef.current) clearTimeout(sceneAnalysisTimeoutRef.current);
             sceneAnalysisTimeoutRef.current = window.setTimeout(runSceneAnalysis, 2500);
@@ -517,6 +538,10 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
   }
   
   const displaySubtitle = streamingSubtitle || renderedSubtitle;
+  const subtitleColor = displaySubtitle?.speaker === 'Homem' ? 'text-cyan-300' 
+                      : displaySubtitle?.speaker === 'Mulher' ? 'text-pink-300' 
+                      : 'text-white';
+
 
   return (
     <div ref={playerContainerRef} className="relative bg-black aspect-video rounded-lg shadow-2xl group overflow-hidden">
@@ -546,7 +571,7 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
       </div>
 
       <div className={`absolute bottom-28 left-0 right-0 text-center p-4 pointer-events-none transition-opacity duration-300 ease-in-out ${displaySubtitle ? 'opacity-100' : 'opacity-0'}`}>
-        <p className="text-xl md:text-2xl font-semibold bg-black/75 rounded-lg px-4 py-2 inline-block text-white" style={{ textShadow: '2px 2px 5px rgba(0,0,0,0.8)' }}>
+        <p className={`text-xl md:text-2xl font-semibold bg-black/75 rounded-lg px-4 py-2 inline-block ${subtitleColor}`} style={{ textShadow: '2px 2px 5px rgba(0,0,0,0.8)' }}>
             {displaySubtitle?.text}
         </p>
       </div>
