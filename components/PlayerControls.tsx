@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import DubbingIcon from './icons/DubbingIcon';
 import SubtitlesIcon from './icons/SubtitlesIcon';
 import SceneAnalysisIcon from './icons/SceneAnalysisIcon';
@@ -9,6 +9,7 @@ import FullscreenIcon from './icons/FullscreenIcon';
 import PlayIcon from './icons/PlayIcon';
 import PauseIcon from './icons/PauseIcon';
 import SpeedIcon from './icons/SpeedIcon';
+import AiIcon from './icons/AiIcon';
 
 interface PlayerControlsProps {
   isPlaying: boolean;
@@ -42,37 +43,76 @@ interface PlayerControlsProps {
   videoRef: React.RefObject<HTMLVideoElement>;
 }
 
-const PlayerControls: React.FC<PlayerControlsProps> = ({
-  isPlaying,
-  onTogglePlay,
-  currentTime,
-  duration,
-  onSeek,
-  isDubbingActive,
-  onToggleDubbing,
-  isSubtitlesActive,
-  onToggleSubtitles,
-  isSceneAnalysisActive,
-  onToggleSceneAnalysis,
-  isOcrActive,
-  onToggleOcr,
-  isSpeedCorrectionActive,
-  onToggleSpeedCorrection,
-  areAiFeaturesDisabled,
-  targetLanguage,
-  onLanguageChange,
-  supportedLanguages,
-  dubbingVoice,
-  onDubbingVoiceChange,
-  supportedVoices,
-  volume,
-  onVolumeChange,
-  onTogglePiP,
-  isFullscreen,
-  onToggleFullscreen,
-  isAtLiveEdge,
-  videoRef,
+const AiSettingsMenu: React.FC<Omit<PlayerControlsProps, 'isPlaying' | 'onTogglePlay' | 'currentTime' | 'duration' | 'onSeek' | 'volume' | 'onVolumeChange' | 'onTogglePiP' | 'isFullscreen' | 'onToggleFullscreen' | 'isAtLiveEdge' | 'videoRef' | 'targetLanguage' | 'onLanguageChange' | 'supportedLanguages'>> = ({
+    isDubbingActive, onToggleDubbing, isSubtitlesActive, onToggleSubtitles, isSceneAnalysisActive, onToggleSceneAnalysis,
+    isOcrActive, onToggleOcr, isSpeedCorrectionActive, onToggleSpeedCorrection, areAiFeaturesDisabled,
+    dubbingVoice, onDubbingVoiceChange, supportedVoices
 }) => {
+    return (
+        <div className="absolute bottom-full right-0 mb-3 bg-gray-900/80 backdrop-blur-md border border-gray-700 rounded-lg p-4 shadow-2xl w-64 flex flex-col gap-4">
+            <div>
+                <label htmlFor="ai-voice" className="text-xs font-semibold text-gray-400 mb-2 block">Voz da IA</label>
+                <select
+                    id="ai-voice"
+                    value={dubbingVoice}
+                    onChange={(e) => onDubbingVoiceChange(e.target.value)}
+                    className="w-full bg-gray-700/80 text-white border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer text-sm hover:bg-gray-600/80 disabled:opacity-50"
+                    disabled={areAiFeaturesDisabled}
+                >
+                    {supportedVoices.map((voice) => (
+                        <option key={voice.code} value={voice.code} className="bg-gray-800">{voice.name}</option>
+                    ))}
+                </select>
+            </div>
+            <div className="flex flex-col gap-3">
+                 <label className="text-xs font-semibold text-gray-400 -mb-1">Recursos de IA</label>
+                 <button onClick={onToggleDubbing} disabled={areAiFeaturesDisabled} className={`flex items-center justify-between w-full text-left text-sm p-2 rounded-md transition-colors ${isDubbingActive ? 'bg-teal-500/20 text-teal-300' : 'hover:bg-white/10'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                    <span className="flex items-center gap-2"><DubbingIcon active={isDubbingActive} /> Dublagem</span>
+                    <div className={`w-4 h-4 rounded-full border-2 ${isDubbingActive ? 'bg-teal-400 border-teal-400' : 'border-gray-500'}`}></div>
+                 </button>
+                 <button onClick={onToggleSubtitles} disabled={areAiFeaturesDisabled} className={`flex items-center justify-between w-full text-left text-sm p-2 rounded-md transition-colors ${isSubtitlesActive ? 'bg-teal-500/20 text-teal-300' : 'hover:bg-white/10'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                    <span className="flex items-center gap-2"><SubtitlesIcon active={isSubtitlesActive} /> Legendas</span>
+                    <div className={`w-4 h-4 rounded-full border-2 ${isSubtitlesActive ? 'bg-teal-400 border-teal-400' : 'border-gray-500'}`}></div>
+                 </button>
+                 <button onClick={onToggleSceneAnalysis} disabled={areAiFeaturesDisabled} className={`flex items-center justify-between w-full text-left text-sm p-2 rounded-md transition-colors ${isSceneAnalysisActive ? 'bg-teal-500/20 text-teal-300' : 'hover:bg-white/10'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                    <span className="flex items-center gap-2"><SceneAnalysisIcon active={isSceneAnalysisActive} /> Análise de Cena</span>
+                    <div className={`w-4 h-4 rounded-full border-2 ${isSceneAnalysisActive ? 'bg-teal-400 border-teal-400' : 'border-gray-500'}`}></div>
+                 </button>
+                 <button onClick={onToggleOcr} disabled={areAiFeaturesDisabled} className={`flex items-center justify-between w-full text-left text-sm p-2 rounded-md transition-colors ${isOcrActive ? 'bg-teal-500/20 text-teal-300' : 'hover:bg-white/10'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                    <span className="flex items-center gap-2"><OcrIcon active={isOcrActive} /> Tradução de Tela</span>
+                    <div className={`w-4 h-4 rounded-full border-2 ${isOcrActive ? 'bg-teal-400 border-teal-400' : 'border-gray-500'}`}></div>
+                 </button>
+                 <button onClick={onToggleSpeedCorrection} disabled={areAiFeaturesDisabled || !isDubbingActive} className={`flex items-center justify-between w-full text-left text-sm p-2 rounded-md transition-colors ${isSpeedCorrectionActive ? 'bg-teal-500/20 text-teal-300' : 'hover:bg-white/10'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                    <span className="flex items-center gap-2"><SpeedIcon active={isSpeedCorrectionActive} /> Sincronia de Áudio</span>
+                    <div className={`w-4 h-4 rounded-full border-2 ${isSpeedCorrectionActive ? 'bg-teal-400 border-teal-400' : 'border-gray-500'}`}></div>
+                 </button>
+            </div>
+        </div>
+    );
+}
+
+
+const PlayerControls: React.FC<PlayerControlsProps> = (props) => {
+  const {
+    isPlaying, onTogglePlay, currentTime, duration, onSeek, areAiFeaturesDisabled,
+    targetLanguage, onLanguageChange, supportedLanguages, volume, onVolumeChange,
+    onTogglePiP, isFullscreen, onToggleFullscreen, isAtLiveEdge, videoRef
+  } = props;
+  
+  const [isAiMenuOpen, setIsAiMenuOpen] = useState(false);
+  const aiMenuRef = useRef<HTMLDivElement>(null);
+
+
+  useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+          if (aiMenuRef.current && !aiMenuRef.current.contains(event.target as Node)) {
+              setIsAiMenuOpen(false);
+          }
+      };
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const formatTime = (timeInSeconds: number) => {
     if (isNaN(timeInSeconds) || !isFinite(timeInSeconds) || timeInSeconds < 0) {
       return '00:00';
@@ -106,16 +146,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
                 max={duration}
                 value={currentTime}
                 onChange={(e) => onSeek(parseFloat(e.target.value))}
-                className="w-full h-1.5 bg-gray-600/50 rounded-lg appearance-none cursor-pointer 
-                           group-hover/progress:h-2 transition-all duration-200
-                           [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 
-                           [&::-webkit-slider-thumb]:bg-teal-400 [&::-webkit-slider-thumb]:rounded-full
-                           [&::-webkit-slider-thumb]:scale-0 group-hover/progress:[&::-webkit-slider-thumb]:scale-100
-                           [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 
-                           [&::-moz-range-thumb]:bg-teal-400 [&::-moz-range-thumb]:rounded-full
-                           [&::-moz-range-thumb]:scale-0 group-hover/progress:[&::-moz-range-thumb]:scale-100
-                           transition-transform duration-200 ease-in-out
-                           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black/50 focus:ring-teal-500"
+                className="w-full h-1.5 bg-gray-600/50 rounded-lg appearance-none cursor-pointer group-hover/progress:h-2 transition-all duration-200 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:bg-teal-400 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:scale-0 group-hover/progress:[&::-webkit-slider-thumb]:scale-100 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:bg-teal-400 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:scale-0 group-hover/progress:[&::-moz-range-thumb]:scale-100 transition-transform duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black/50 focus:ring-teal-500"
                 aria-label="Seek slider"
             />
         </div>
@@ -133,23 +164,9 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
           <div className="flex items-center gap-2 w-28 group/volume">
             <VolumeIcon volume={volume} />
             <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={volume}
-              onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-               className="w-full h-1.5 bg-gray-600/80 rounded-lg appearance-none cursor-pointer 
-                           [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 
-                           [&::-webkit-slider-thumb]:bg-teal-400 [&::-webkit-slider-thumb]:rounded-full
-                           [&::-webkit-slider-thumb]:scale-0 group-hover/volume:[&::-webkit-slider-thumb]:scale-100
-                           [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 
-                           [&::-moz-range-thumb]:bg-teal-400 [&::-moz-range-thumb]:rounded-full
-                           [&::-moz-range-thumb]:scale-0 group-hover/volume:[&::-moz-range-thumb]:scale-100
-                           transition-transform duration-200 ease-in-out
-                           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black/50 focus:ring-teal-500"
-              title={`Volume: ${Math.round(volume * 100)}%`}
-              aria-label="Controle de volume"
+              type="range" min="0" max="1" step="0.01" value={volume} onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+              className="w-full h-1.5 bg-gray-600/80 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:bg-teal-400 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:scale-0 group-hover/volume:[&::-webkit-slider-thumb]:scale-100 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:bg-teal-400 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:scale-0 group-hover/volume:[&::-moz-range-thumb]:scale-100 transition-transform duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black/50 focus:ring-teal-500"
+              title={`Volume: ${Math.round(volume * 100)}%`} aria-label="Controle de volume"
             />
           </div>
           <div className="text-white text-sm font-mono select-none">
@@ -163,12 +180,12 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center justify-end flex-wrap gap-x-1 md:gap-x-2">
+        <div className="flex items-center justify-end flex-wrap gap-x-2 md:gap-x-3">
             <select
-            value={targetLanguage}
-            onChange={(e) => onLanguageChange(e.target.value)}
-            className="bg-gray-800/80 text-white border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer text-xs sm:text-sm hover:bg-gray-700/80"
-            title="Selecione o idioma de tradução"
+              value={targetLanguage}
+              onChange={(e) => onLanguageChange(e.target.value)}
+              className="bg-gray-800/80 text-white border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer text-xs sm:text-sm hover:bg-gray-700/80"
+              title="Selecione o idioma de tradução"
             >
             {supportedLanguages.map((lang) => (
                 <option key={lang.code} value={lang.name} className="bg-gray-800">
@@ -176,63 +193,21 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
                 </option>
             ))}
             </select>
-            <div className="flex gap-x-1">
-                <select
-                    value={dubbingVoice}
-                    onChange={(e) => onDubbingVoiceChange(e.target.value)}
-                    className="bg-gray-800/80 text-white border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer text-xs sm:text-sm hover:bg-gray-700/80 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Voz de IA para dublagem"
+            
+            <div className="h-6 w-px bg-gray-600 mx-1"></div>
+
+            <div ref={aiMenuRef} className="relative flex">
+                 <button
+                    onClick={() => setIsAiMenuOpen(p => !p)}
+                    title={areAiFeaturesDisabled ? 'Adicione uma chave de API para usar os recursos de IA' : 'Configurações de IA'}
+                    className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={areAiFeaturesDisabled}
-                >
-                    {supportedVoices.map((voice) => (
-                        <option key={voice.code} value={voice.code} className="bg-gray-800">
-                        {voice.name}
-                        </option>
-                    ))}
-                </select>
+                 >
+                    <AiIcon active={isAiMenuOpen || props.isDubbingActive || props.isSubtitlesActive} />
+                 </button>
+                 {isAiMenuOpen && <AiSettingsMenu {...props} />}
             </div>
-            <div className="h-6 w-px bg-gray-600 mx-1"></div>
-            <button
-              onClick={onToggleOcr}
-              title={areAiFeaturesDisabled ? 'Adicione uma chave de API para ativar o OCR' : (isOcrActive ? 'Desativar Tradução de Tela (OCR)' : 'Ativar Tradução de Tela (OCR)')}
-              className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={areAiFeaturesDisabled}
-            >
-              <OcrIcon active={isOcrActive} />
-            </button>
-            <button
-              onClick={onToggleSceneAnalysis}
-              title={areAiFeaturesDisabled ? 'Adicione uma chave de API para ativar a Análise de Cena' : (isSceneAnalysisActive ? 'Desativar Análise de Cena' : 'Ativar Análise de Cena')}
-              className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={areAiFeaturesDisabled}
-            >
-              <SceneAnalysisIcon active={isSceneAnalysisActive} />
-            </button>
-            <button
-              onClick={onToggleSubtitles}
-              title={areAiFeaturesDisabled ? 'Adicione uma chave de API para ativar as Legendas' : (isSubtitlesActive ? 'Desativar Legendas' : 'Ativar Legendas')}
-              className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={areAiFeaturesDisabled}
-            >
-              <SubtitlesIcon active={isSubtitlesActive} />
-            </button>
-            <button
-              onClick={onToggleDubbing}
-              title={areAiFeaturesDisabled ? 'Adicione uma chave de API para ativar a Dublagem' : (isDubbingActive ? 'Desativar Dublagem com IA' : 'Ativar Dublagem com IA')}
-              className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={areAiFeaturesDisabled}
-            >
-              <DubbingIcon active={isDubbingActive} />
-            </button>
-            <button
-              onClick={onToggleSpeedCorrection}
-              title={areAiFeaturesDisabled ? 'Adicione uma chave de API para ativar a Correção de Velocidade' : (isSpeedCorrectionActive ? 'Desativar Correção de Velocidade' : 'Ativar Correção de Velocidade')}
-              className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={areAiFeaturesDisabled || !isDubbingActive}
-            >
-              <SpeedIcon active={isSpeedCorrectionActive} />
-            </button>
-            <div className="h-6 w-px bg-gray-600 mx-1"></div>
+
             <button
             onClick={onTogglePiP}
             title="Ativar/Desativar Picture-in-Picture"

@@ -109,6 +109,12 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
   const nextStartTimeRef = useRef(0);
   const scheduledSourcesRef = useRef(new Set<AudioBufferSourceNode>());
 
+  const aiStateRef = useRef({ isDubbingActive, isSubtitlesActive, isSceneAnalysisActive, isAtLiveEdge, isSpeedCorrectionActive });
+
+  useEffect(() => {
+      aiStateRef.current = { isDubbingActive, isSubtitlesActive, isSceneAnalysisActive, isAtLiveEdge, isSpeedCorrectionActive };
+  }, [isDubbingActive, isSubtitlesActive, isSceneAnalysisActive, isAtLiveEdge, isSpeedCorrectionActive]);
+
   useEffect(() => { saveSettings({ isDubbingActive }); }, [isDubbingActive]);
   useEffect(() => { saveSettings({ isSubtitlesActive }); }, [isSubtitlesActive]);
   useEffect(() => { saveSettings({ isSceneAnalysisActive }); }, [isSceneAnalysisActive]);
@@ -135,35 +141,6 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
     }
   }, [aiError]);
 
-  useEffect(() => {
-    const findCurrentProgram = () => {
-      if (!channel?.tvgId || !epgData) { onProgramChange(null); return; }
-      const programsForChannel = epgData[channel.tvgId];
-      if (!programsForChannel) { onProgramChange(null); return; }
-      const now = new Date();
-      const program = programsForChannel.find(p => now >= p.start && now < p.stop);
-      onProgramChange(program || null);
-    };
-    findCurrentProgram();
-    programCheckIntervalRef.current = window.setInterval(findCurrentProgram, 60000);
-    return () => { if (programCheckIntervalRef.current) clearInterval(programCheckIntervalRef.current); };
-  }, [channel, epgData, onProgramChange]);
-
-  const handleTogglePlay = useCallback(async () => {
-    if (!videoRef.current) return;
-    const video = videoRef.current;
-    try {
-        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-            await audioContextRef.current.resume();
-        }
-        if (video.paused) { await video.play(); } else { video.pause(); }
-    } catch (e) { 
-      if (e instanceof Error && e.name !== 'AbortError') {
-        console.error("Ação de Play/Pause falhou", e);
-      }
-    }
-  }, []);
-
   const stopHistoricalDubbing = useCallback(() => {
     if (historicalDubbingSourceRef.current) {
       try { historicalDubbingSourceRef.current.stop(); } catch(e) {}
@@ -180,26 +157,44 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
     nextStartTimeRef.current = 0;
   }, []);
 
-  
+  useEffect(() => {
+    const findCurrentProgram = () => {
+      if (!channel?.tvgId || !epgData) { onProgramChange(null); return; }
+      const programsForChannel = epgData[channel.tvgId];
+      if (!programsForChannel) { onProgramChange(null); return; }
+      const now = new Date();
+      const program = programsForChannel.find(p => now >= p.start && now < p.stop);
+      onProgramChange(program || null);
+    };
+    findCurrentProgram();
+    if(programCheckIntervalRef.current) clearInterval(programCheckIntervalRef.current);
+    programCheckIntervalRef.current = window.setInterval(findCurrentProgram, 60000);
+    return () => { if (programCheckIntervalRef.current) clearInterval(programCheckIntervalRef.current); };
+  }, [channel, epgData, onProgramChange]);
+
+  const handleTogglePlay = useCallback(async () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    try {
+        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+            await audioContextRef.current.resume();
+        }
+        if (video.paused) { await video.play(); } else { video.pause(); }
+    } catch (e) { 
+        // Ignore AbortError which happens when toggling quickly
+        if (e instanceof Error && e.name === 'AbortError') return;
+        console.error("Ação de Play/Pause falhou", e); 
+    }
+  }, []);
+
+  // Efeito para configuração e desmontagem do player (HLS) ao mudar de canal
   useEffect(() => {
     if (!videoRef.current || !channel) return;
     const video = videoRef.current;
+    let isEffectActive = true; // Tracks if this effect run is still valid
     
+    // Limpeza completa antes de configurar o novo canal
     if (hlsRef.current) { hlsRef.current.destroy(); }
-    
-    if (!audioContextRef.current) {
-        try {
-            const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
-            audioContextRef.current = new AudioCtor();
-            const source = audioContextRef.current.createMediaElementSource(video);
-            const gain = audioContextRef.current.createGain();
-            source.connect(gain);
-            gain.connect(audioContextRef.current.destination);
-            sourceNodeRef.current = source;
-            gainNodeRef.current = gain;
-        } catch(e) { console.error("Não foi possível criar o contexto de áudio", e); return; }
-    }
-    
     stopHistoricalDubbing();
     stopLiveDubbing();
     setRenderedSubtitle(null);
@@ -215,12 +210,28 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
     setIsPlaying(false);
     setIsAtLiveEdge(true);
 
+    if (!audioContextRef.current) {
+        try {
+            const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
+            audioContextRef.current = new AudioCtor();
+            sourceNodeRef.current = audioContextRef.current.createMediaElementSource(video);
+            gainNodeRef.current = audioContextRef.current.createGain();
+            sourceNodeRef.current.connect(gainNodeRef.current);
+            gainNodeRef.current.connect(audioContextRef.current.destination);
+        } catch(e) { console.error("Não foi possível criar o contexto de áudio", e); return; }
+    }
+    
     const playVideo = async () => {
+        if (!isEffectActive) return;
         try {
             if (audioContextRef.current?.state === 'suspended') await audioContextRef.current.resume();
-            await video.play();
+            if (isEffectActive && video.paused) {
+                await video.play();
+            }
         } catch (error) {
-            if (error instanceof Error && error.name !== 'AbortError') console.error("Autoplay falhou:", error);
+            if (isEffectActive && error instanceof Error && error.name !== 'AbortError') {
+                console.error("Autoplay falhou:", error);
+            }
         }
     };
     
@@ -230,10 +241,44 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
         hls.loadSource(channel.url);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, playVideo);
+        hls.on(Hls.Events.ERROR, (event, data) => {
+            if (!isEffectActive) return;
+            if (data.fatal) {
+                switch (data.type) {
+                    case Hls.ErrorTypes.NETWORK_ERROR:
+                        console.warn("HLS Network error, trying to recover...");
+                        hls.startLoad();
+                        break;
+                    case Hls.ErrorTypes.MEDIA_ERROR:
+                        console.warn("HLS Media error, trying to recover...");
+                        hls.recoverMediaError();
+                        break;
+                    default:
+                        console.error("HLS Fatal error, cannot recover");
+                        hls.destroy();
+                        break;
+                }
+            }
+        });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = channel.url;
         video.addEventListener('loadedmetadata', playVideo);
     }
+
+    return () => {
+        isEffectActive = false;
+        if (hlsRef.current) hlsRef.current.destroy();
+        video.removeEventListener('loadedmetadata', playVideo);
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+    };
+  }, [channel, onProgramChange, stopHistoricalDubbing, stopLiveDubbing]);
+
+  // Efeito para gerenciar ouvintes de eventos do vídeo. Roda apenas uma vez.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
 
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
@@ -245,29 +290,17 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
 
         const buffer = videoRef.current.buffered;
         if (buffer?.length > 0) {
+            const liveThreshold = 15;
             const liveEdge = buffer.end(buffer.length - 1);
-            const timeFromLive = liveEdge - now;
-
-            // Lógica de histerese para evitar oscilações rápidas no estado ao vivo
-            const liveThreshold = 15; // Deve estar a esta distância para ser considerado "não ao vivo"
-            const returnToLiveThreshold = 5; // Deve estar a esta proximidade para ser considerado "ao vivo" novamente
-
-            setIsAtLiveEdge(prevAtLiveEdge => {
-              if (prevAtLiveEdge && timeFromLive > liveThreshold) {
-                  return false; // Ficou para trás
-              }
-              if (!prevAtLiveEdge && timeFromLive < returnToLiveThreshold) {
-                  return true; // Alcançou
-              }
-              return prevAtLiveEdge;
-            });
+            const atLive = (liveEdge - now) < liveThreshold;
+            setIsAtLiveEdge(atLive);
         }
         
         const subHistory = subtitleHistoryRef.current;
         const activeSub = subHistory.find(sub => now >= sub.start && now <= sub.end) || null;
         setRenderedSubtitle(activeSub);
         
-        if (isDubbingActive && !isAtLiveEdge) {
+        if (aiStateRef.current.isDubbingActive && !aiStateRef.current.isAtLiveEdge) {
             const dubHistory = dubbingHistoryRef.current;
             let foundSegment = false;
             for (let i = 0; i < dubHistory.length; i++) {
@@ -276,10 +309,10 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
                     foundSegment = true;
                     if (lastPlayedDubbingIndexRef.current !== i) {
                         stopHistoricalDubbing();
-                        if (outputAudioContextRef.current) {
+                        if (outputAudioContextRef.current && dubbingGainNodeRef.current) {
                            const source = outputAudioContextRef.current.createBufferSource();
                            source.buffer = segment.buffer;
-                           source.connect(dubbingGainNodeRef.current!);
+                           source.connect(dubbingGainNodeRef.current);
                            const offset = now - segment.start;
                            source.start(0, offset);
                            historicalDubbingSourceRef.current = source;
@@ -292,7 +325,7 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
             if (!foundSegment) stopHistoricalDubbing();
         }
     };
-    const onDurationChange = () => videoRef.current && setDuration(videoRef.current.duration);
+    const onDurationChange = () => setDuration(video.duration);
     
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
@@ -300,31 +333,20 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
     video.addEventListener('durationchange', onDurationChange);
 
     return () => {
-        stopHistoricalDubbing();
-        stopLiveDubbing();
-        if (hlsRef.current) hlsRef.current.destroy();
-        video.removeEventListener('loadedmetadata', playVideo);
         video.removeEventListener('play', onPlay);
         video.removeEventListener('pause', onPause);
         video.removeEventListener('timeupdate', onTimeUpdate);
         video.removeEventListener('durationchange', onDurationChange);
-        video.pause();
-        video.removeAttribute('src');
-        video.load();
     };
-  }, [channel, onProgramChange, isDubbingActive, isAtLiveEdge, stopHistoricalDubbing, stopLiveDubbing]);
+  }, [stopHistoricalDubbing]);
 
   useEffect(() => {
-    if (isAtLiveEdge) {
-      stopHistoricalDubbing();
-    } else {
-      stopLiveDubbing();
-    }
+    if (isAtLiveEdge) { stopHistoricalDubbing(); } 
+    else { stopLiveDubbing(); }
   }, [isAtLiveEdge, stopHistoricalDubbing, stopLiveDubbing]);
 
   const runSceneAnalysis = useCallback(async () => {
-    if (!isSceneAnalysisActive || !videoRef.current || !canvasRef.current || !apiKey) return;
-    
+    if (!aiStateRef.current.isSceneAnalysisActive || !videoRef.current || !canvasRef.current || !apiKey) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
     canvas.width = video.videoWidth;
@@ -347,7 +369,7 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
             } catch (error) { handleAiError("A análise de cena falhou."); }
         }
     }, 'image/jpeg', 0.8);
-  }, [isSceneAnalysisActive, handleAiError, apiKey]);
+  }, [apiKey, handleAiError]);
 
   const calculatePlaybackRate = (lag: number) => {
     const LATENCY_THRESHOLD = 1.0; 
@@ -365,54 +387,40 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
         }
     }
 
-    if (isSubtitlesActive && message.serverContent?.outputTranscription) {
+    if (aiStateRef.current.isSubtitlesActive && message.serverContent?.outputTranscription) {
       let textChunk = message.serverContent.outputTranscription.text;
       const now = videoRef.current?.currentTime ?? 0;
       const turnRef = currentTurnTranscriptionRef;
-
-      // Se este for o início de um novo turno (sem texto ainda), detecte o locutor
-      if (turnRef.current.text === '' && textChunk.trim()) {
-          turnRef.current.start = now;
-          const trimmedChunk = textChunk.trim();
-          if (trimmedChunk.startsWith('[M]:')) {
-              turnRef.current.speaker = 'Homem';
-              textChunk = trimmedChunk.substring(4).trim();
-          } else if (trimmedChunk.startsWith('[F]:')) {
-              turnRef.current.speaker = 'Mulher';
-              textChunk = trimmedChunk.substring(4).trim();
-          } else {
-              turnRef.current.speaker = null; // Padrão se não houver prefixo
-              textChunk = trimmedChunk;
-          }
-      } else {
-         textChunk = textChunk.trim(); // Limpa pedaços subsequentes
+      if (turnRef.current.text === '') {
+        turnRef.current.start = now;
+        if (textChunk.startsWith('[M]:')) {
+            turnRef.current.speaker = 'Homem';
+            textChunk = textChunk.substring(4).trim();
+        } else if (textChunk.startsWith('[F]:')) {
+            turnRef.current.speaker = 'Mulher';
+            textChunk = textChunk.substring(4).trim();
+        } else {
+            turnRef.current.speaker = null;
+        }
       }
-      
-      if (textChunk) {
-        turnRef.current.text += (turnRef.current.text ? ' ' : '') + textChunk;
-      }
-      
-      if (turnRef.current.text) {
-        setStreamingSubtitle({ text: turnRef.current.text, speaker: turnRef.current.speaker, start: turnRef.current.start, end: now + 2 });
-      }
+      const processedChunk = textChunk.trim();
+      if (processedChunk) turnRef.current.text += (turnRef.current.text ? ' ' : '') + processedChunk;
+      if (turnRef.current.text) setStreamingSubtitle({ text: turnRef.current.text, speaker: turnRef.current.speaker, start: turnRef.current.start, end: now + 2 });
     }
     
     if (message.serverContent?.turnComplete) {
         const turn = currentTurnTranscriptionRef.current;
         const end = videoRef.current?.currentTime ?? 0;
-        if (turn.text && end > turn.start) {
-            subtitleHistoryRef.current.push({ text: turn.text.trim(), speaker: turn.speaker, start: turn.start, end });
-        }
+        if (turn.text && end > turn.start) subtitleHistoryRef.current.push({ text: turn.text.trim(), speaker: turn.speaker, start: turn.start, end });
         setStreamingSubtitle(null);
         currentTurnTranscriptionRef.current = { text: '', speaker: null, start: 0 };
-
-        if(isSceneAnalysisActive) {
+        if(aiStateRef.current.isSceneAnalysisActive) {
             if(sceneAnalysisTimeoutRef.current) clearTimeout(sceneAnalysisTimeoutRef.current);
             sceneAnalysisTimeoutRef.current = window.setTimeout(runSceneAnalysis, 2500);
         }
     }
 
-    if (isDubbingActive && outputAudioContextRef.current) {
+    if (aiStateRef.current.isDubbingActive && outputAudioContextRef.current) {
       const base64EncodedAudioString = message.serverContent?.modelTurn?.parts[0]?.inlineData.data;
       if (base64EncodedAudioString) {
           const startTime = videoRef.current?.currentTime ?? 0;
@@ -420,9 +428,9 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
           const audioBuffer = await decodeAudioData(decode(base64EncodedAudioString), outputCtx, 24000, 1);
           dubbingHistoryRef.current.push({ start: startTime, end: startTime + audioBuffer.duration, buffer: audioBuffer });
           
-          if (isAtLiveEdge) {
+          if (aiStateRef.current.isAtLiveEdge) {
             const lag = nextStartTimeRef.current - outputCtx.currentTime;
-            const playbackRate = isSpeedCorrectionActive ? calculatePlaybackRate(lag) : 1.0;
+            const playbackRate = aiStateRef.current.isSpeedCorrectionActive ? calculatePlaybackRate(lag) : 1.0;
             const effectiveDuration = audioBuffer.duration / playbackRate;
             const scheduleTime = Math.max(outputCtx.currentTime, nextStartTimeRef.current);
             
@@ -438,8 +446,9 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
           }
       }
     }
-  }, [isDubbingActive, isSubtitlesActive, isSceneAnalysisActive, runSceneAnalysis, isAtLiveEdge, isSpeedCorrectionActive]);
+  }, [runSceneAnalysis]);
 
+  // Efeito para gerenciar a sessão de IA (Gemini).
   useEffect(() => {
     const isAudioAiNeeded = isDubbingActive || isSubtitlesActive;
     if (!audioContextRef.current || !gainNodeRef.current || !sourceNodeRef.current || !apiKey) return;
@@ -458,7 +467,7 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
             geminiService.sendAudio(resampledData);
         };
         scriptProcessorRef.current = processor;
-        try { sourceNode.disconnect(); sourceNode.connect(gainNode); gainNode.connect(processor); processor.connect(audioCtx.destination); } 
+        try { sourceNode.disconnect(); gainNode.disconnect(); sourceNode.connect(gainNode); gainNode.connect(processor); processor.connect(audioCtx.destination); } 
         catch(e) { console.warn("O redirecionamento do grafo de áudio pode ter inconsistências.", e); }
         
         try {
@@ -498,11 +507,11 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
 
     if (isAudioAiNeeded) { setupAiConnection(); }
     return teardownAiConnection;
-  }, [apiKey, isDubbingActive, isSubtitlesActive, targetLanguage, dubbingVoice, handleMessage, handleAiError, currentProgram, stopLiveDubbing, stopHistoricalDubbing]);
+  }, [apiKey, isDubbingActive, isSubtitlesActive, targetLanguage, dubbingVoice, currentProgram, handleMessage, handleAiError, stopLiveDubbing, stopHistoricalDubbing]);
 
   useEffect(() => {
     if (gainNodeRef.current && audioContextRef.current) {
-      gainNodeRef.current.gain.linearRampToValueAtTime(isDubbingActive ? 0.4 * volume : volume, audioContextRef.current.currentTime + 0.2);
+      gainNodeRef.current.gain.linearRampToValueAtTime(isDubbingActive ? 0.2 * volume : volume, audioContextRef.current.currentTime + 0.2);
     }
     if (dubbingGainNodeRef.current && outputAudioContextRef.current) {
         dubbingGainNodeRef.current.gain.linearRampToValueAtTime(isDubbingActive ? volume : 0, outputAudioContextRef.current.currentTime + 0.2);
@@ -558,9 +567,8 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
   
   const displaySubtitle = streamingSubtitle || renderedSubtitle;
   const subtitleColor = displaySubtitle?.speaker === 'Homem' ? 'text-cyan-300' 
-                      : displaySubtitle?.speaker === 'Mulher' ? 'text-pink-300' 
-                      : 'text-white';
-
+                        : displaySubtitle?.speaker === 'Mulher' ? 'text-pink-300' 
+                        : 'text-white';
 
   return (
     <div ref={playerContainerRef} className="relative bg-black aspect-video rounded-lg shadow-2xl group overflow-hidden">
