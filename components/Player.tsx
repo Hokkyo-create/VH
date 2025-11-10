@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Hls from 'hls.js';
 import { Channel, EpgData, Programme, DubbingSegment } from '../types';
@@ -235,10 +236,13 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
         }
     };
     
+    // Use a proxy to avoid mixed content (HTTP streams on HTTPS page) and CORS issues.
+    const streamUrl = `https://corsproxy.io/?${encodeURIComponent(channel.url)}`;
+
     if (Hls.isSupported()) {
         const hls = new Hls();
         hlsRef.current = hls;
-        hls.loadSource(channel.url);
+        hls.loadSource(streamUrl);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, playVideo);
         hls.on(Hls.Events.ERROR, (event, data) => {
@@ -261,7 +265,7 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
             }
         });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = channel.url;
+        video.src = streamUrl;
         video.addEventListener('loadedmetadata', playVideo);
     }
 
