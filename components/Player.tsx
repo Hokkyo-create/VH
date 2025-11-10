@@ -93,6 +93,7 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
   const [dubbingVoice, setDubbingVoice] = useState(initialSettings.dubbingVoice ?? 'Zephyr');
   const [volume, setVolume] = useState(initialSettings.volume ?? 1);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [playerError, setPlayerError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -180,36 +181,69 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
         if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
             await audioContextRef.current.resume();
         }
-        if (video.paused) { await video.play(); } else { video.pause(); }
+        if (video.paused) { 
+            await video.play(); 
+            setPlayerError(null);
+        } else { 
+            video.pause(); 
+        }
     } catch (e) { 
-        // Ignore AbortError which happens when toggling quickly
         if (e instanceof Error && e.name === 'AbortError') return;
         console.error("Ação de Play/Pause falhou", e); 
+        setPlayerError("Não foi possível reproduzir o vídeo. Tente novamente.");
     }
   }, []);
+  
+  const getStreamUrl = (originalUrl: string) => {
+    const PROXY_URL = 'https://corsproxy.io/?';
+    try {
+        const url = new URL(originalUrl);
+        if (url.hostname.includes('proxy.utako.moe') || url.hostname === 'localhost') {
+            return originalUrl;
+        }
+    } catch (e) {
+        return originalUrl;
+    }
+    return `${PROXY_URL}${encodeURIComponent(originalUrl)}`;
+  };
 
   // Efeito para configuração e desmontagem do player (HLS) ao mudar de canal
   useEffect(() => {
-    if (!videoRef.current || !channel) return;
     const video = videoRef.current;
-    let isEffectActive = true; // Tracks if this effect run is still valid
     
-    // Limpeza completa antes de configurar o novo canal
-    if (hlsRef.current) { hlsRef.current.destroy(); }
-    stopHistoricalDubbing();
-    stopLiveDubbing();
-    setRenderedSubtitle(null);
-    setStreamingSubtitle(null);
-    subtitleHistoryRef.current = [];
-    dubbingHistoryRef.current = [];
-    setSceneDescription('');
-    setOcrSummary('');
-    onProgramChange(null);
-    setAiError(null);
-    setCurrentTime(0);
-    setDuration(0);
-    setIsPlaying(false);
-    setIsAtLiveEdge(true);
+    // Cleanup function runs on component unmount or before re-running the effect.
+    const cleanup = () => {
+        if (hlsRef.current) {
+            hlsRef.current.destroy();
+            hlsRef.current = null;
+        }
+        if (video) {
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+        }
+        stopHistoricalDubbing();
+        stopLiveDubbing();
+        setRenderedSubtitle(null);
+        setStreamingSubtitle(null);
+        subtitleHistoryRef.current = [];
+        dubbingHistoryRef.current = [];
+        setSceneDescription('');
+        setOcrSummary('');
+        setAiError(null);
+        setPlayerError(null);
+        setCurrentTime(0);
+        setDuration(0);
+        setIsPlaying(false);
+        setIsAtLiveEdge(true);
+    };
+
+    if (!video || !channel) {
+        cleanup();
+        return;
+    }
+    
+    cleanup(); // Clean up previous state before setting up new channel
 
     if (!audioContextRef.current) {
         try {
@@ -219,65 +253,79 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
             gainNodeRef.current = audioContextRef.current.createGain();
             sourceNodeRef.current.connect(gainNodeRef.current);
             gainNodeRef.current.connect(audioContextRef.current.destination);
-        } catch(e) { console.error("Não foi possível criar o contexto de áudio", e); return; }
+        } catch(e) { 
+            console.error("Não foi possível criar o contexto de áudio", e); 
+            setPlayerError("O navegador não suporta a API de áudio necessária.");
+            return;
+        }
     }
     
-    const playVideo = async () => {
-        if (!isEffectActive) return;
-        try {
-            if (audioContextRef.current?.state === 'suspended') await audioContextRef.current.resume();
-            if (isEffectActive && video.paused) {
-                await video.play();
-            }
-        } catch (error) {
-            if (isEffectActive && error instanceof Error && error.name !== 'AbortError') {
-                console.error("Autoplay falhou:", error);
-            }
-        }
-    };
-    
-    // Use a proxy to avoid mixed content (HTTP streams on HTTPS page) and CORS issues.
-    const streamUrl = `https://corsproxy.io/?${encodeURIComponent(channel.url)}`;
+    const streamUrl = getStreamUrl(channel.url);
 
     if (Hls.isSupported()) {
-        const hls = new Hls();
+        const hls = new Hls({
+            manifestLoadPolicy: {
+                default: { maxTimeToFirstByteMs: 8000, maxLoadTimeMs: 15000, timeoutMs: 10000, maxRetry: 2, retryDelayMs: 1000, maxRetryDelayMs: 4000 },
+            },
+            fragLoadPolicy: {
+                default: { maxTimeToFirstByteMs: 8000, maxLoadTimeMs: 15000, timeoutMs: 10000, maxRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 4000 },
+            },
+            maxBufferHole: 2,
+        });
         hlsRef.current = hls;
-        hls.loadSource(streamUrl);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, playVideo);
+        
         hls.on(Hls.Events.ERROR, (event, data) => {
-            if (!isEffectActive) return;
+            console.error('HLS Error:', data);
             if (data.fatal) {
                 switch (data.type) {
                     case Hls.ErrorTypes.NETWORK_ERROR:
-                        console.warn("HLS Network error, trying to recover...");
-                        hls.startLoad();
+                        if (data.details === 'manifestLoadError') {
+                            setPlayerError(`Falha ao carregar a transmissão. O canal pode estar offline, bloqueado ou necessitar de um proxy (CORS).`);
+                        } else {
+                            setPlayerError(`Erro de rede. A transmissão pode estar offline ou sua conexão instável.`);
+                        }
                         break;
                     case Hls.ErrorTypes.MEDIA_ERROR:
-                        console.warn("HLS Media error, trying to recover...");
+                        setPlayerError(`Erro de mídia. O fluxo de vídeo parece estar corrompido. Tentando recuperar...`);
                         hls.recoverMediaError();
                         break;
                     default:
-                        console.error("HLS Fatal error, cannot recover");
+                        setPlayerError(`Ocorreu um erro irrecuperável. Por favor, tente outro canal.`);
                         hls.destroy();
                         break;
                 }
             }
         });
+
+        hls.loadSource(streamUrl);
+        hls.attachMedia(video);
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, async () => {
+            setPlayerError(null);
+            try {
+                if(video.paused) await video.play();
+            } catch (error) {
+                console.warn("Autoplay foi bloqueado.", error);
+                setPlayerError("Clique no play para iniciar o vídeo (Autoplay bloqueado).");
+            }
+        });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = streamUrl;
-        video.addEventListener('loadedmetadata', playVideo);
+        const onCanPlay = async () => {
+             setPlayerError(null);
+             try {
+                if(video.paused) await video.play();
+             } catch(error) {
+                console.warn("Autoplay foi bloqueado.", error);
+                setPlayerError("Clique no play para iniciar o vídeo (Autoplay bloqueado).");
+             }
+        };
+        video.addEventListener('canplay', onCanPlay);
+        return () => video.removeEventListener('canplay', onCanPlay);
     }
 
-    return () => {
-        isEffectActive = false;
-        if (hlsRef.current) hlsRef.current.destroy();
-        video.removeEventListener('loadedmetadata', playVideo);
-        video.pause();
-        video.removeAttribute('src');
-        video.load();
-    };
-  }, [channel, onProgramChange, stopHistoricalDubbing, stopLiveDubbing]);
+    return cleanup;
+  }, [channel, stopHistoricalDubbing, stopLiveDubbing]);
 
   // Efeito para gerenciar ouvintes de eventos do vídeo. Roda apenas uma vez.
   useEffect(() => {
@@ -578,6 +626,16 @@ const Player: React.FC<PlayerProps> = ({ channel, apiKey, onInvalidApiKey, epgDa
     <div ref={playerContainerRef} className="relative bg-black aspect-video rounded-lg shadow-2xl group overflow-hidden">
       <video ref={videoRef} className="w-full h-full rounded-lg" crossOrigin="anonymous" playsInline />
       <canvas ref={canvasRef} className="hidden" />
+
+      {playerError && (
+        <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-center p-4 z-10">
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <h3 className="mt-4 text-xl font-semibold text-white">Erro ao Carregar Vídeo</h3>
+            <p className="mt-1 text-gray-300">{playerError}</p>
+        </div>
+      )}
 
       <OcrTranslateOverlay 
         videoRef={videoRef}
